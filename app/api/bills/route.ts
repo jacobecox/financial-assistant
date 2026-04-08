@@ -11,7 +11,7 @@ export async function GET() {
     const bills = await sql`
       SELECT * FROM bills
       WHERE user_id = ${userId} AND active = true
-      ORDER BY category ASC NULLS LAST, due_day ASC NULLS LAST
+      ORDER BY sort_order ASC, created_at ASC
     `;
     return NextResponse.json(bills);
   } catch (e) {

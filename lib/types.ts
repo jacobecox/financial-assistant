@@ -32,6 +32,7 @@ export interface Bill {
   anchor_date: string | null;
   recurring: boolean;
   active: boolean;
+  sort_order: number;
   created_at: string;
 }
 

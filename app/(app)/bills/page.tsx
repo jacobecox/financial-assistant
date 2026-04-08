@@ -1,10 +1,17 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import {
+  DndContext, closestCenter, PointerSensor, useSensor, useSensors,
+  type DragEndEvent,
+} from "@dnd-kit/core";
+import {
+  SortableContext, useSortable, verticalListSortingStrategy, arrayMove,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 import { CurrencyInput } from "@/components/CurrencyInput";
 import { DateInput } from "@/components/DateInput";
 import type { Bill, BillInput, DiscretionaryItem, DiscretionaryFrequency } from "@/lib/types";
-// DiscretionaryItem + DiscretionaryFrequency are used by DiscretionarySection below
 import type { BillFrequency } from "@/lib/bills";
 import { frequencyLabel, computeNextDueDate } from "@/lib/bills";
 
@@ -305,8 +312,8 @@ function DiscretionarySection() {
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-base font-semibold">Discretionary</h2>
-          <p className="text-xs text-slate-500 mt-0.5">Reserved amounts kept as a buffer each paycheck</p>
+          <h2 className="text-xl font-bold">Discretionary</h2>
+          <p className="text-sm text-slate-500 mt-0.5">Reserved amounts kept as a buffer each paycheck</p>
         </div>
         {!showForm && !editing && (
           <button onClick={() => setShowForm(true)} className={btn.primarySm}>
@@ -428,15 +435,10 @@ function DiscretionaryForm({
   );
 }
 
-// ── Bill row ──────────────────────────────────────────────────────────────────
+// ── Sortable bill row ─────────────────────────────────────────────────────────
 
-function BillRow({
-  bill,
-  confirmingId,
-  onEdit,
-  onDeleteRequest,
-  onDeleteConfirm,
-  onDeleteCancel,
+function SortableBillRow({
+  bill, confirmingId, onEdit, onDeleteRequest, onDeleteConfirm, onDeleteCancel,
 }: {
   bill: Bill;
   confirmingId: string | null;
@@ -445,28 +447,86 @@ function BillRow({
   onDeleteConfirm: () => void;
   onDeleteCancel: () => void;
 }) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
+    useSortable({ id: bill.id });
+
   return (
-    <div className="flex items-center justify-between py-3 border-b border-slate-700/50 last:border-0">
-      <div className="min-w-0">
-        <p className="text-sm font-medium text-slate-100 truncate">{bill.name}</p>
-        <p className="text-xs text-slate-500 mt-0.5">
-          {frequencyLabel(bill.frequency)} · next {formatDueDate(bill)}
-          {!bill.recurring && " · one-time"}
-        </p>
+    <div
+      ref={setNodeRef}
+      style={{ transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.4 : 1 }}
+      className="group flex items-center gap-2 py-4 border-b border-slate-700/50 last:border-0"
+    >
+      {/* Drag handle */}
+      <button
+        {...attributes}
+        {...listeners}
+        className="cursor-grab active:cursor-grabbing text-slate-600 opacity-0 group-hover:opacity-100 transition-opacity shrink-0 touch-none"
+        tabIndex={-1}
+      >
+        <svg width="12" height="16" viewBox="0 0 12 16" fill="currentColor">
+          <circle cx="4" cy="3" r="1.5"/><circle cx="8" cy="3" r="1.5"/>
+          <circle cx="4" cy="8" r="1.5"/><circle cx="8" cy="8" r="1.5"/>
+          <circle cx="4" cy="13" r="1.5"/><circle cx="8" cy="13" r="1.5"/>
+        </svg>
+      </button>
+
+      <div className="flex items-center justify-between flex-1 min-w-0">
+        <div className="min-w-0">
+          <p className="text-base font-semibold text-slate-100 truncate">{bill.name}</p>
+          <p className="text-sm text-slate-500 mt-0.5">
+            {frequencyLabel(bill.frequency)} · next {formatDueDate(bill)}
+            {!bill.recurring && " · one-time"}
+          </p>
+        </div>
+        <div className="flex items-center gap-3 ml-4 shrink-0">
+          <span className="tabular-nums text-base font-bold text-slate-200">{fmt$(bill.amount)}</span>
+          <button onClick={onEdit} className="text-xs font-medium text-slate-400 transition-colors duration-150 hover:text-slate-200">Edit</button>
+          <DeleteConfirm
+            id={bill.id}
+            confirmingId={confirmingId}
+            onRequest={onDeleteRequest}
+            onConfirm={onDeleteConfirm}
+            onCancel={onDeleteCancel}
+          />
+        </div>
       </div>
-      <div className="flex items-center gap-3 ml-4 shrink-0">
-        <span className="tabular-nums text-sm font-semibold text-slate-200">
-          {fmt$(bill.amount)}
-        </span>
-        <button onClick={onEdit} className="text-xs font-medium text-slate-400 transition-colors duration-150 hover:text-slate-200">Edit</button>
-        <DeleteConfirm
-          id={bill.id}
-          confirmingId={confirmingId}
-          onRequest={onDeleteRequest}
-          onConfirm={onDeleteConfirm}
-          onCancel={onDeleteCancel}
-        />
+    </div>
+  );
+}
+
+// ── Sortable category card ────────────────────────────────────────────────────
+
+function SortableCategoryCard({
+  cat, children,
+}: {
+  cat: string;
+  children: React.ReactNode;
+}) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
+    useSortable({ id: `cat:${cat}` });
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={{ transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.4 : 1 }}
+      className={card + " group"}
+    >
+      <div className="flex items-center gap-2 mb-1">
+        <button
+          {...attributes}
+          {...listeners}
+          className="cursor-grab active:cursor-grabbing text-slate-600 opacity-0 group-hover:opacity-100 transition-opacity shrink-0 touch-none"
+          tabIndex={-1}
+        >
+          <svg width="12" height="16" viewBox="0 0 12 16" fill="currentColor">
+            <circle cx="4" cy="3" r="1.5"/><circle cx="8" cy="3" r="1.5"/>
+            <circle cx="4" cy="8" r="1.5"/><circle cx="8" cy="8" r="1.5"/>
+            <circle cx="4" cy="13" r="1.5"/><circle cx="8" cy="13" r="1.5"/>
+          </svg>
+        </button>
+        <h2 className="text-xs font-semibold text-slate-400 uppercase tracking-widest">{cat}</h2>
       </div>
+      {children}
     </div>
   );
 }
@@ -480,6 +540,8 @@ export default function BillsPage() {
   const [editing, setEditing] = useState<Bill | null>(null);
   const [confirmingId, setConfirmingId] = useState<string | null>(null);
 
+  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
+
   async function load() {
     const res = await fetch("/api/bills");
     if (res.ok) setBills(await res.json());
@@ -487,6 +549,63 @@ export default function BillsPage() {
   }
 
   useEffect(() => { load(); }, []);
+
+  async function persistOrder(ordered: Bill[]) {
+    await fetch("/api/bills/reorder", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(ordered.map((b, i) => ({ id: b.id, sort_order: i }))),
+    });
+  }
+
+  function grouped(billList: Bill[]) {
+    return billList.reduce<Record<string, Bill[]>>((acc, b) => {
+      const key = b.category ?? "Uncategorized";
+      (acc[key] ??= []).push(b);
+      return acc;
+    }, {});
+  }
+
+  function categories(billList: Bill[]) {
+    // Order by first appearance in the sorted bill list
+    const seen = new Set<string>();
+    const order: string[] = [];
+    for (const b of billList) {
+      const k = b.category ?? "Uncategorized";
+      if (!seen.has(k)) { seen.add(k); order.push(k); }
+    }
+    return order;
+  }
+
+  async function handleDragEnd(event: DragEndEvent) {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+
+    const activeId = String(active.id);
+    const overId   = String(over.id);
+
+    let newBills: Bill[];
+
+    if (activeId.startsWith("cat:") && overId.startsWith("cat:")) {
+      // Reorder entire category blocks
+      const cats = categories(bills);
+      const fromIdx = cats.indexOf(activeId.slice(4));
+      const toIdx   = cats.indexOf(overId.slice(4));
+      const newCats = arrayMove(cats, fromIdx, toIdx);
+      const g = grouped(bills);
+      newBills = newCats.flatMap((c) => g[c] ?? []);
+    } else if (!activeId.startsWith("cat:") && !overId.startsWith("cat:")) {
+      // Reorder bill within (or between) categories
+      const oldIdx = bills.findIndex((b) => b.id === activeId);
+      const newIdx = bills.findIndex((b) => b.id === overId);
+      newBills = arrayMove(bills, oldIdx, newIdx);
+    } else {
+      return;
+    }
+
+    setBills(newBills);
+    await persistOrder(newBills);
+  }
 
   async function handleAdd(data: BillInput) {
     const res = await fetch("/api/bills", {
@@ -513,23 +632,13 @@ export default function BillsPage() {
     await load();
   }
 
-  // Group bills by category (null → "Uncategorized")
-  const grouped = bills.reduce<Record<string, Bill[]>>((acc, b) => {
-    const key = b.category ?? "Uncategorized";
-    (acc[key] ??= []).push(b);
-    return acc;
-  }, {});
-
-  const categories = Object.keys(grouped).sort((a, b) => {
-    if (a === "Uncategorized") return 1;
-    if (b === "Uncategorized") return -1;
-    return a.localeCompare(b);
-  });
+  const g = grouped(bills);
+  const cats = categories(bills);
 
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold tracking-tight">Bills</h1>
+        <h1 className="text-2xl font-bold tracking-tight">Bills</h1>
         {!showForm && !editing && (
           <button onClick={() => setShowForm(true)} className={btn.primarySm}>
             + Add Bill
@@ -537,46 +646,40 @@ export default function BillsPage() {
         )}
       </div>
 
-      {/* Add form */}
-      {showForm && (
-        <BillForm onSave={handleAdd} onCancel={() => setShowForm(false)} />
-      )}
+      {showForm && <BillForm onSave={handleAdd} onCancel={() => setShowForm(false)} />}
+      {editing  && <BillForm initial={editing} onSave={handleEdit} onCancel={() => setEditing(null)} />}
 
-      {/* Edit form */}
-      {editing && (
-        <BillForm initial={editing} onSave={handleEdit} onCancel={() => setEditing(null)} />
-      )}
-
-      {/* Bills list */}
       {loading ? (
         <p className="text-slate-500 text-sm">Loading…</p>
       ) : bills.length === 0 ? (
         <p className="text-slate-500 text-sm">No bills added yet.</p>
       ) : (
-        <div className="space-y-4">
-          {categories.map((cat) => (
-            <div key={cat} className={card}>
-              <h2 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1">
-                {cat}
-              </h2>
-              {grouped[cat].map((bill) => (
-                <BillRow
-                  key={bill.id}
-                  bill={bill}
-                  confirmingId={confirmingId}
-                  onEdit={() => { setShowForm(false); setEditing(bill); setConfirmingId(null); }}
-                  onDeleteRequest={() => setConfirmingId(bill.id)}
-                  onDeleteConfirm={() => handleDelete(bill.id)}
-                  onDeleteCancel={() => setConfirmingId(null)}
-                />
+        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+          <SortableContext items={cats.map((c) => `cat:${c}`)} strategy={verticalListSortingStrategy}>
+            <div className="space-y-4">
+              {cats.map((cat) => (
+                <SortableCategoryCard key={cat} cat={cat}>
+                  <SortableContext items={(g[cat] ?? []).map((b) => b.id)} strategy={verticalListSortingStrategy}>
+                    {(g[cat] ?? []).map((bill) => (
+                      <SortableBillRow
+                        key={bill.id}
+                        bill={bill}
+                        confirmingId={confirmingId}
+                        onEdit={() => { setShowForm(false); setEditing(bill); setConfirmingId(null); }}
+                        onDeleteRequest={() => setConfirmingId(bill.id)}
+                        onDeleteConfirm={() => handleDelete(bill.id)}
+                        onDeleteCancel={() => setConfirmingId(null)}
+                      />
+                    ))}
+                  </SortableContext>
+                </SortableCategoryCard>
               ))}
             </div>
-          ))}
-        </div>
+          </SortableContext>
+        </DndContext>
       )}
 
       <hr className="border-slate-700/50" />
-
       <DiscretionarySection />
     </div>
   );

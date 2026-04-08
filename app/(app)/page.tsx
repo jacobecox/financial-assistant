@@ -46,7 +46,7 @@ function StatCard({
   return (
     <div className={`${card} border-l-2 ${accent} space-y-1`}>
       <p className="text-xs font-semibold uppercase tracking-widest text-slate-400">{label}</p>
-      <p className={`text-2xl font-bold tabular-nums ${dim ? "text-slate-400" : "text-slate-50"}`}>
+      <p className={`text-3xl font-bold tabular-nums ${dim ? "text-slate-400" : "text-slate-50"}`}>
         {value}
       </p>
       {sub && <p className="text-xs text-slate-500">{sub}</p>}
@@ -85,7 +85,7 @@ function BreakdownBar({
         Monthly Breakdown
       </h2>
 
-      <div className="flex h-4 overflow-hidden rounded-full bg-slate-700/60 gap-px">
+      <div className="flex h-5 overflow-hidden rounded-full bg-slate-700/60 gap-px">
         <div className={`${t} bg-rose-500/80 rounded-l-full`}    style={{ width: mounted ? `${billsPct}%`   : "0%" }} />
         <div className={`${t} bg-amber-500/80`}                   style={{ width: mounted ? `${discPct}%`    : "0%" }} />
         {!overspent && (
@@ -99,7 +99,7 @@ function BreakdownBar({
             <span className="h-2 w-2 rounded-sm bg-rose-500/80 shrink-0" />
             <span className="text-xs text-slate-400">Bills</span>
           </div>
-          <p className="text-sm font-semibold tabular-nums text-rose-400">{fmt$(bills)}</p>
+          <p className="text-base font-bold tabular-nums text-rose-400">{fmt$(bills)}</p>
           <p className="text-xs text-slate-500">{billsPct.toFixed(0)}%</p>
         </div>
         <div className="space-y-0.5">
@@ -107,7 +107,7 @@ function BreakdownBar({
             <span className="h-2 w-2 rounded-sm bg-amber-500/80 shrink-0" />
             <span className="text-xs text-slate-400">Buffer</span>
           </div>
-          <p className="text-sm font-semibold tabular-nums text-amber-400">
+          <p className="text-base font-bold tabular-nums text-amber-400">
             {overspent ? "—" : fmt$(discretionary)}
           </p>
           <p className="text-xs text-slate-500">{overspent ? "—" : `${discPct.toFixed(0)}%`}</p>
@@ -117,7 +117,7 @@ function BreakdownBar({
             <span className="h-2 w-2 rounded-sm bg-emerald-500 shrink-0" />
             <span className="text-xs text-slate-400">Savings</span>
           </div>
-          <p className="text-sm font-semibold tabular-nums text-emerald-400">
+          <p className="text-base font-bold tabular-nums text-emerald-400">
             {overspent ? "—" : fmt$(savings)}
           </p>
           <p className="text-xs text-slate-500">{overspent ? "—" : `${savingsPct.toFixed(0)}%`}</p>
@@ -189,19 +189,15 @@ export default function OverviewPage() {
   return (
     <div className="space-y-4">
       <div>
-        <h1 className="text-xl font-semibold tracking-tight">Overview</h1>
-        <p className="text-xs text-slate-400 mt-0.5">{currentMonthLabel()}</p>
+        <h1 className="text-2xl font-bold tracking-tight">Overview</h1>
+        <p className="text-lg font-semibold text-slate-300 mt-0.5">{currentMonthLabel()}</p>
       </div>
 
       <div className="grid grid-cols-1 gap-3">
         <StatCard
-          label="Expected Monthly Income"
+          label="Monthly Income"
           value={hasSchedules ? fmt$(expectedMonthly) : "—"}
-          sub={
-            hasSchedules
-              ? `From ${schedules.length} schedule${schedules.length !== 1 ? "s" : ""}`
-              : "No pay schedule set up"
-          }
+          sub={hasSchedules ? undefined : "No pay schedule set up"}
           accent="border-emerald-500/50"
           dim={!hasSchedules}
         />
@@ -210,13 +206,13 @@ export default function OverviewPage() {
           value={totalBills > 0 ? fmt$(totalBills) : "—"}
           sub={
             totalBills > 0
-              ? `${bills.filter((b) => b.recurring && b.active).length} recurring bills · normalized to /mo`
+              ? `${bills.filter((b) => b.recurring && b.active).length} recurring bills`
               : "No bills added yet"
           }
           accent="border-rose-500/50"
         />
         <StatCard
-          label="Est. Savings"
+          label="Recommended Savings"
           value={expectedMonthly > 0 ? fmt$(estSavings) : "—"}
           sub={
             expectedMonthly > 0
@@ -236,7 +232,7 @@ export default function OverviewPage() {
 
       {!hasSchedules && (
         <p className="text-center text-sm text-slate-500">
-          <Link href="/dashboard/income" className="text-emerald-400 hover:text-emerald-300 transition-colors">
+          <Link href="/income" className="text-emerald-400 hover:text-emerald-300 transition-colors">
             Set up a pay schedule
           </Link>
           {" "}to see your monthly picture.

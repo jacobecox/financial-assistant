@@ -27,7 +27,7 @@ export default function RootLayout({
   return (
     <ClerkProvider>
       <html lang="en">
-        <body className="bg-slate-950 text-slate-50 antialiased">{children}</body>
+        <body className="bg-slate-950 text-slate-50 antialiased overflow-x-hidden">{children}</body>
       </html>
     </ClerkProvider>
   );
