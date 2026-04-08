@@ -14,6 +14,7 @@ import { DateInput } from "@/components/DateInput";
 import type { Bill, BillInput, DiscretionaryItem, DiscretionaryFrequency } from "@/lib/types";
 import type { BillFrequency } from "@/lib/bills";
 import { frequencyLabel, computeNextDueDate } from "@/lib/bills";
+import { useMonth } from "@/components/MonthContext";
 
 // ── Design tokens ─────────────────────────────────────────────────────────────
 
@@ -72,6 +73,11 @@ function formatDueDate(bill: Bill): string {
 
 function fmt$(n: number): string {
   return Number(n).toLocaleString("en-US", { style: "currency", currency: "USD" });
+}
+
+function fmtDate(iso: string) {
+  const dateOnly = String(iso).slice(0, 10);
+  return new Date(dateOnly + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
 }
 
 // ── Delete confirmation popup ─────────────────────────────────────────────────
@@ -143,17 +149,28 @@ function BillForm({ initial, onSave, onCancel }: BillFormProps) {
   const [amount, setAmount] = useState(initial ? Number(initial.amount).toFixed(2) : "0.00");
   const [category, setCategory] = useState(initial?.category ?? "");
   const [frequency, setFrequency] = useState<BillFrequency>(initial?.frequency ?? "monthly");
-  // For monthly/semi_monthly: store as date strings so we can use DateInput, extract day on save
   const [dueDatePicker, setDueDatePicker] = useState<string>(pickerFromDay(initial?.due_day));
   const [dueDatePicker2, setDueDatePicker2] = useState<string>(pickerFromDay(initial?.due_day_2));
   const [anchorDate, setAnchorDate] = useState(initial?.anchor_date ?? "");
   const [recurring, setRecurring] = useState(initial?.recurring ?? true);
   const [saving, setSaving] = useState(false);
+  const [errors, setErrors] = useState<Record<string, string>>({});
 
   const usesDueDays = frequency === "monthly" || frequency === "semi_monthly";
 
+  const err = (field: string) => errors[field]
+    ? <p className="text-xs text-red-400 mt-1">{errors[field]}</p>
+    : null;
+
   async function handleSubmit(e: React.SyntheticEvent<HTMLFormElement>) {
     e.preventDefault();
+    const errs: Record<string, string> = {};
+    if (!name.trim())                                    errs.name       = "Name is required";
+    if (parseFloat(amount) <= 0)                         errs.amount     = "Amount must be greater than $0";
+    if (usesDueDays && !dueDatePicker)                   errs.dueDate    = "Due date is required";
+    if (needsAnchorDate(frequency) && !anchorDate)       errs.anchorDate = "Date is required";
+    if (Object.keys(errs).length) { setErrors(errs); return; }
+
     setSaving(true);
     try {
       await onSave({
@@ -181,18 +198,19 @@ function BillForm({ initial, onSave, onCancel }: BillFormProps) {
           <label className={labelCls}>Name</label>
           <input
             type="text"
-            required
             value={name}
             onChange={(e) => setName(e.target.value)}
             placeholder="e.g. Netflix"
-            className={inputCls}
+            className={inputCls + (errors.name ? " ring-red-500/50" : "")}
           />
+          {err("name")}
         </div>
 
         {/* Amount */}
         <div className="col-span-2 sm:col-span-1">
           <label className={labelCls}>Amount <span className="text-slate-600">(per occurrence)</span></label>
-          <CurrencyInput value={amount} onChange={setAmount} className={inputCls + " tabular-nums"} />
+          <CurrencyInput value={amount} onChange={setAmount} className={inputCls + " tabular-nums" + (errors.amount ? " ring-red-500/50" : "")} />
+          {err("amount")}
         </div>
 
         {/* Category */}
@@ -230,7 +248,8 @@ function BillForm({ initial, onSave, onCancel }: BillFormProps) {
               {frequency === "semi_monthly" ? "First due date" : "Due date"}{" "}
               <span className="text-slate-600">(pick any month)</span>
             </label>
-            <DateInput value={dueDatePicker} onChange={setDueDatePicker} className={inputCls + " cursor-pointer"} />
+            <DateInput value={dueDatePicker} onChange={setDueDatePicker} className={inputCls + " cursor-pointer" + (errors.dueDate ? " ring-red-500/50" : "")} />
+            {err("dueDate")}
           </div>
         )}
 
@@ -247,7 +266,8 @@ function BillForm({ initial, onSave, onCancel }: BillFormProps) {
         {needsAnchorDate(frequency) && (
           <div className="col-span-2 sm:col-span-1">
             <label className={labelCls}>A known due date</label>
-            <DateInput value={anchorDate} onChange={setAnchorDate} className={inputCls + " cursor-pointer"} />
+            <DateInput value={anchorDate} onChange={setAnchorDate} className={inputCls + " cursor-pointer" + (errors.anchorDate ? " ring-red-500/50" : "")} />
+            {err("anchorDate")}
           </div>
         )}
 
@@ -273,6 +293,195 @@ function BillForm({ initial, onSave, onCancel }: BillFormProps) {
         </button>
       </div>
     </form>
+  );
+}
+
+// ── Planned expenses section ──────────────────────────────────────────────────
+
+interface PlannedExpense {
+  id: string;
+  name: string;
+  amount: number;
+  planned_date: string;
+  notes: string | null;
+}
+
+const EMPTY_PLANNED = { name: "", amount: "0.00", planned_date: "", notes: "" };
+
+function PlannedForm({
+  initial = EMPTY_PLANNED,
+  onSave,
+  onCancel,
+  saving,
+}: {
+  initial?: typeof EMPTY_PLANNED;
+  onSave: (f: typeof EMPTY_PLANNED) => void;
+  onCancel: () => void;
+  saving: boolean;
+}) {
+  const [form, setForm] = useState(initial);
+  const [errors, setErrors] = useState<Record<string, string>>({});
+  const set = (patch: Partial<typeof EMPTY_PLANNED>) => {
+    setForm((f) => ({ ...f, ...patch }));
+    setErrors((e) => { const n = { ...e }; Object.keys(patch).forEach((k) => delete n[k]); return n; });
+  };
+
+  function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    const errs: Record<string, string> = {};
+    if (!form.name.trim())             errs.name         = "Name is required";
+    if (parseFloat(form.amount) <= 0)  errs.amount       = "Amount must be greater than $0";
+    if (!form.planned_date)            errs.planned_date = "Date is required";
+    if (Object.keys(errs).length) { setErrors(errs); return; }
+    onSave(form);
+  }
+
+  const err = (field: string) => errors[field]
+    ? <p className="text-xs text-red-400 mt-1">{errors[field]}</p>
+    : null;
+
+  return (
+    <form onSubmit={handleSubmit} className="space-y-3 pt-1">
+      <div className="grid grid-cols-2 gap-3">
+        <div className="col-span-2">
+          <label className={labelCls}>Name</label>
+          <input type="text" placeholder="e.g. Beach Trip" value={form.name} onChange={(e) => set({ name: e.target.value })}
+            className={inputCls + (errors.name ? " ring-red-500/50" : "")} />
+          {err("name")}
+        </div>
+        <div>
+          <label className={labelCls}>Amount</label>
+          <CurrencyInput value={form.amount} onChange={(v) => set({ amount: v })}
+            className={inputCls + (errors.amount ? " ring-red-500/50" : "")} />
+          {err("amount")}
+        </div>
+        <div>
+          <label className={labelCls}>Date</label>
+          <DateInput value={form.planned_date} onChange={(v) => set({ planned_date: v })}
+            className={inputCls + (errors.planned_date ? " ring-red-500/50" : "")} />
+          {err("planned_date")}
+        </div>
+        <div className="col-span-2">
+          <label className={labelCls}>Notes <span className="text-slate-600">(optional)</span></label>
+          <input type="text" placeholder="e.g. flights + hotel" value={form.notes} onChange={(e) => set({ notes: e.target.value })} className={inputCls} />
+        </div>
+      </div>
+      <div className="flex gap-2 pt-1">
+        <button type="submit" disabled={saving} className={btn.primary}>{saving ? "Saving…" : "Save"}</button>
+        <button type="button" onClick={onCancel} className={btn.secondary}>Cancel</button>
+      </div>
+    </form>
+  );
+}
+
+function PlannedSection() {
+  const { year, month, monthLabel } = useMonth();
+  const [all, setAll]           = useState<PlannedExpense[]>([]);
+  const [showForm, setShowForm] = useState(false);
+  const [editing, setEditing]   = useState<PlannedExpense | null>(null);
+  const [confirmId, setConfirmId] = useState<string | null>(null);
+  const [saving, setSaving]     = useState(false);
+
+  async function load() {
+    const data = await fetch(`/api/planned-expenses?year=${year}&month=${month}`).then((r) => r.json());
+    setAll(Array.isArray(data) ? data : []);
+  }
+
+  useEffect(() => { load(); }, [year, month]);
+
+  // Default date for new form = 1st of selected month
+  const defaultDate = `${year}-${String(month + 1).padStart(2, "0")}-01`;
+
+  async function handleSave(form: typeof EMPTY_PLANNED) {
+    setSaving(true);
+    try {
+      if (editing) {
+        const res = await fetch(`/api/planned-expenses/${editing.id}`, {
+          method: "PUT", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name: form.name, amount: parseFloat(form.amount), planned_date: form.planned_date, notes: form.notes || null }),
+        });
+        if (res.ok) { setEditing(null); await load(); }
+      } else {
+        const res = await fetch("/api/planned-expenses", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name: form.name, amount: parseFloat(form.amount), planned_date: form.planned_date, notes: form.notes || null }),
+        });
+        if (res.ok) { setShowForm(false); await load(); }
+      }
+    } finally { setSaving(false); }
+  }
+
+  async function handleDelete(id: string) {
+    await fetch(`/api/planned-expenses/${id}`, { method: "DELETE" });
+    setConfirmId(null);
+    await load();
+  }
+
+  return (
+    <section className={card + " space-y-3"}>
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-base font-semibold text-slate-200">Planned Expenses</h2>
+          <p className="text-xs text-slate-500 mt-0.5">One-time expenses by month</p>
+        </div>
+        {!showForm && !editing && (
+          <button onClick={() => setShowForm(true)} className={btn.primarySm}>+ Add</button>
+        )}
+      </div>
+
+      {showForm && (
+        <div className="rounded-lg border border-orange-400/20 bg-slate-900/50 p-3">
+          <PlannedForm
+            initial={{ ...EMPTY_PLANNED, planned_date: defaultDate }}
+            onSave={handleSave}
+            onCancel={() => setShowForm(false)}
+            saving={saving}
+          />
+        </div>
+      )}
+
+      {all.length === 0 && !showForm ? (
+        <p className="text-sm text-slate-500">No planned expenses for this month.</p>
+      ) : (
+        <ul className="space-y-1.5">
+          {all.map((p) => (
+            <li key={p.id}>
+              {editing?.id === p.id ? (
+                <div className="rounded-lg border border-orange-400/20 bg-slate-900/50 p-3">
+                  <PlannedForm
+                    initial={{ name: p.name, amount: String(p.amount), planned_date: String(p.planned_date).slice(0, 10), notes: p.notes ?? "" }}
+                    onSave={handleSave}
+                    onCancel={() => setEditing(null)}
+                    saving={saving}
+                  />
+                </div>
+              ) : (
+                <div className="flex items-start justify-between rounded-lg border-l-2 border-orange-400/30 bg-slate-900/60 px-4 py-3 hover:border-orange-400/60 hover:bg-slate-900 transition-colors">
+                  <div className="min-w-0">
+                    <p className="text-sm font-semibold text-slate-100">{p.name}</p>
+                    <p className="text-xs text-slate-500 mt-0.5">{fmtDate(p.planned_date)}{p.notes ? ` · ${p.notes}` : ""}</p>
+                  </div>
+                  <div className="flex flex-col items-end gap-1.5 shrink-0 ml-4">
+                    <p className="text-sm font-bold tabular-nums text-orange-300">{fmt$(p.amount)}</p>
+                    <div className="flex items-center gap-3">
+                      <button onClick={() => { setShowForm(false); setEditing(p); }} className={btn.ghost}>Edit</button>
+                      {confirmId === p.id ? (
+                        <div className="flex items-center gap-2">
+                          <button onClick={() => handleDelete(p.id)} className={btn.danger}>Confirm</button>
+                          <button onClick={() => setConfirmId(null)} className="text-slate-500 hover:text-slate-200 text-sm">✕</button>
+                        </div>
+                      ) : (
+                        <button onClick={() => setConfirmId(p.id)} className="text-xs text-slate-500 hover:text-slate-300 transition-colors">Remove</button>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
   );
 }
 
@@ -678,6 +887,9 @@ export default function BillsPage() {
           </SortableContext>
         </DndContext>
       )}
+
+      <hr className="border-slate-700/50" />
+      <PlannedSection />
 
       <hr className="border-slate-700/50" />
       <DiscretionarySection />

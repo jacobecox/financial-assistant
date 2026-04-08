@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { useMonth } from "@/components/MonthContext";
 
 interface Message {
   role: "user" | "assistant";
@@ -50,6 +51,7 @@ const SUGGESTIONS = [
 ];
 
 export default function AskPage() {
+  const { monthLabel } = useMonth();
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);       // true = dots (tool calls running)
@@ -78,7 +80,7 @@ export default function AskPage() {
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ messages: history }),
+        body: JSON.stringify({ messages: history, selectedMonth: monthLabel }),
       });
 
       if (!res.ok || !res.body) throw new Error("Request failed");
@@ -133,7 +135,7 @@ export default function AskPage() {
   const empty = messages.length === 0;
 
   return (
-    <div className="flex flex-col" style={{ height: "calc(100dvh - 3.25rem)" }}>
+    <div className="flex-1 flex flex-col min-h-0">
       {/* Header */}
       <div className="shrink-0 pb-3 border-b border-slate-800">
         <h1 className="text-2xl font-bold tracking-tight">Ask AI</h1>

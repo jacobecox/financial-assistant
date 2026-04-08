@@ -29,7 +29,7 @@ export async function POST(req: Request) {
 
   try {
     const [schedule] = await sql<PaySchedule[]>`
-      INSERT INTO pay_schedules (user_id, name, amount, frequency, anchor_date, pay_day_1, pay_day_2)
+      INSERT INTO pay_schedules (user_id, name, amount, frequency, anchor_date, pay_day_1, pay_day_2, end_date)
       VALUES (
         ${userId},
         ${body.name},
@@ -37,7 +37,8 @@ export async function POST(req: Request) {
         ${body.frequency},
         ${body.anchor_date},
         ${body.pay_day_1 ?? null},
-        ${body.pay_day_2 ?? null}
+        ${body.pay_day_2 ?? null},
+        ${(body as Record<string, unknown>).end_date ?? null}
       )
       RETURNING *
     `;

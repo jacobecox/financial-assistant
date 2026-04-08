@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { CurrencyInput } from "@/components/CurrencyInput";
 import { DateInput } from "@/components/DateInput";
 import type { Frequency } from "@/lib/types";
+import { useMonth } from "@/components/MonthContext";
 
 // CurrencyInput and DateInput are used by ScheduleForm below
 
@@ -17,6 +18,7 @@ interface PayScheduleResponse {
   anchor_date: string;
   pay_day_1: number | null;
   pay_day_2: number | null;
+  end_date: string | null;
   current_pay_date: string;
   next_pay_date: string | null;
 }
@@ -53,10 +55,13 @@ function fmt$(n: number) {
   return Number(n).toLocaleString("en-US", { style: "currency", currency: "USD" });
 }
 
-function fmtDate(iso: string) {
-  return new Date(iso + "T00:00:00").toLocaleDateString("en-US", {
-    month: "short", day: "numeric", year: "numeric",
-  });
+function fmtDate(iso: string | null | undefined) {
+  if (!iso) return null;
+  // Slice to YYYY-MM-DD in case DB returns a full timestamp
+  const dateOnly = String(iso).slice(0, 10);
+  const d = new Date(dateOnly + "T00:00:00");
+  if (isNaN(d.getTime())) return null;
+  return d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
 }
 
 function ordinal(n: number) {
@@ -70,7 +75,7 @@ function describeSchedule(s: PayScheduleResponse) {
     case "twice_monthly": return `${ordinal(s.pay_day_1!)} & ${ordinal(s.pay_day_2!)} monthly`;
     case "monthly":       return `${ordinal(s.pay_day_1!)} of each month`;
     case "biweekly":      return "Every 2 weeks";
-    case "once":          return s.anchor_date ? `One-time · ${fmtDate(s.anchor_date)}` : "One-time";
+    case "once": { const d = fmtDate(s.anchor_date); return d ? `One-time · ${d}` : "One-time"; }
   }
 }
 
@@ -124,6 +129,7 @@ const EMPTY_FORM = {
   anchor_date: today,
   pay_day_1: "2025-01-01",  // date picker string; we extract the day number on save
   pay_day_2: "2025-01-15",
+  end_date: "",             // empty = no end date
 };
 
 function ScheduleForm({
@@ -138,11 +144,20 @@ function ScheduleForm({
   saving: boolean;
 }) {
   const [form, setForm] = useState(initial);
+  const [errors, setErrors] = useState<Record<string, string>>({});
   const set = (patch: Partial<typeof EMPTY_FORM>) => setForm((f) => ({ ...f, ...patch }));
+
+  const err = (field: string) => errors[field]
+    ? <p className="text-xs text-red-400 mt-1">{errors[field]}</p>
+    : null;
 
   function handleSubmit(e: React.SyntheticEvent<HTMLFormElement>) {
     e.preventDefault();
-    if (parseFloat(form.amount) <= 0) return;
+    const errs: Record<string, string> = {};
+    if (!form.name.trim())                                                    errs.name       = "Name is required";
+    if (parseFloat(form.amount) <= 0)                                         errs.amount     = "Amount must be greater than $0";
+    if ((form.frequency === "biweekly" || form.frequency === "once") && !form.anchor_date) errs.anchor_date = "Date is required";
+    if (Object.keys(errs).length) { setErrors(errs); return; }
     onSave(form);
   }
 
@@ -163,15 +178,17 @@ function ScheduleForm({
         <div className="col-span-2">
           <label className={labelCls}>Label</label>
           <input
-            type="text" required placeholder="e.g. My Paycheck"
+            type="text" placeholder="e.g. My Paycheck"
             value={form.name}
             onChange={(e) => set({ name: e.target.value })}
-            className={inputCls}
+            className={inputCls + (errors.name ? " ring-red-500/50" : "")}
           />
+          {err("name")}
         </div>
         <div className="col-span-2 sm:col-span-1">
           <label className={labelCls}>Amount per paycheck</label>
-          <CurrencyInput value={form.amount} onChange={(v) => set({ amount: v })} className={inputCls} />
+          <CurrencyInput value={form.amount} onChange={(v) => set({ amount: v })} className={inputCls + (errors.amount ? " ring-red-500/50" : "")} />
+          {err("amount")}
         </div>
         <div className="col-span-2 sm:col-span-1">
           <label className={labelCls}>Frequency</label>
@@ -195,7 +212,14 @@ function ScheduleForm({
             <label className={labelCls}>
               {form.frequency === "biweekly" ? "Most recent pay date" : "Pay date"}
             </label>
-            <DateInput value={form.anchor_date} onChange={(v) => set({ anchor_date: v })} required className={inputCls} />
+            <DateInput value={form.anchor_date} onChange={(v) => set({ anchor_date: v })} className={inputCls + (errors.anchor_date ? " ring-red-500/50" : "")} />
+            {err("anchor_date")}
+          </div>
+        )}
+        {form.frequency !== "once" && (
+          <div className="col-span-2 sm:col-span-1">
+            <label className={labelCls}>End date <span className="text-slate-600">(optional)</span></label>
+            <DateInput value={form.end_date} onChange={(v) => set({ end_date: v })} className={inputCls} />
           </div>
         )}
       </div>
@@ -242,9 +266,10 @@ function PayScheduleSection({
       name: s.name,
       amount: String(s.amount),
       frequency: s.frequency,
-      anchor_date: s.anchor_date ?? today,
+      anchor_date: s.anchor_date ? String(s.anchor_date).slice(0, 10) : today,
       pay_day_1: dayToPicker(s.pay_day_1, 1),
       pay_day_2: dayToPicker(s.pay_day_2, 15),
+      end_date: s.end_date ? String(s.end_date).slice(0, 10) : "",
     };
   }
 
@@ -256,6 +281,7 @@ function PayScheduleSection({
         amount: parseFloat(form.amount),
         frequency: form.frequency,
         anchor_date: form.anchor_date,
+        end_date: form.end_date || null,
       };
       if (form.frequency === "twice_monthly") {
         body.pay_day_1 = pickerToDay(form.pay_day_1);
@@ -310,12 +336,19 @@ function PayScheduleSection({
                   />
                 </div>
               ) : (
-                <div className="group flex items-start justify-between rounded-lg border-l-2 border-emerald-600/30 bg-slate-900/60 px-4 py-3.5 transition-colors duration-150 hover:border-emerald-500/60 hover:bg-slate-900">
+                <div className={`group flex items-start justify-between rounded-lg border-l-2 bg-slate-900/60 px-4 py-3.5 transition-colors duration-150 hover:bg-slate-900 ${s.end_date ? "border-slate-600/40 hover:border-slate-500/60 opacity-70" : "border-emerald-600/30 hover:border-emerald-500/60"}`}>
                   <div className="min-w-0">
-                    <p className="text-base font-semibold text-slate-100">{s.name}</p>
+                    <div className="flex items-center gap-2">
+                      <p className="text-base font-semibold text-slate-100">{s.name}</p>
+                      {s.end_date && (
+                        <span className="text-xs font-medium text-slate-500 bg-slate-700/60 rounded px-1.5 py-0.5">
+                          Ended {fmtDate(s.end_date)}
+                        </span>
+                      )}
+                    </div>
                     <p className="text-sm text-slate-400 mt-0.5">{describeSchedule(s)}</p>
                     <p className="text-xs text-slate-500 mt-1">
-                      Next: {s.next_pay_date ? fmtDate(s.next_pay_date) : "—"}
+                      Next: {fmtDate(s.next_pay_date) ?? "—"}
                     </p>
                   </div>
                   <div className="flex flex-col items-end gap-1.5 shrink-0 ml-4">
@@ -367,21 +400,40 @@ function PayScheduleSection({
 // ─── Main page ────────────────────────────────────────────────────────────────
 
 export default function DashboardPage() {
+  const { year, month, monthLabel } = useMonth();
   const [schedules, setSchedules] = useState<PayScheduleResponse[] | undefined>(undefined);
 
   useEffect(() => {
     fetch("/api/pay-schedule").then((r) => r.json()).then(setSchedules);
   }, []);
 
+  // For display: filter schedules to those active in the selected month
+  const visibleSchedules = schedules?.filter((s) => {
+    // One-time: only show in its specific month (or always if no date set)
+    if (s.frequency === "once") {
+      if (!s.anchor_date) return true;
+      const d = new Date(String(s.anchor_date).slice(0, 10) + "T00:00:00");
+      return d.getFullYear() === year && d.getMonth() === month;
+    }
+    // Recurring: hide if end_date is before the start of the selected month
+    if (s.end_date) {
+      const endDate = new Date(String(s.end_date).slice(0, 10) + "T00:00:00");
+      const monthStart = new Date(year, month, 1);
+      if (endDate < monthStart) return false;
+    }
+    return true;
+  });
+
   return (
     <div className="space-y-4">
       <div>
         <h1 className="text-2xl font-bold tracking-tight">Income</h1>
+        <p className="text-sm text-slate-500 mt-0.5">{monthLabel}</p>
       </div>
 
       {schedules !== undefined && (
         <PayScheduleSection
-          schedules={schedules}
+          schedules={visibleSchedules ?? []}
           onAdded={(s) => setSchedules((prev) => [...(prev ?? []), s])}
           onUpdated={(s) => setSchedules((prev) => prev?.map((x) => (x.id === s.id ? s : x)))}
           onDeleted={(id) => setSchedules((prev) => prev?.filter((x) => x.id !== id))}

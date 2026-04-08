@@ -23,6 +23,7 @@ export async function PUT(
         anchor_date = ${body.anchor_date},
         pay_day_1   = ${body.pay_day_1 ?? null},
         pay_day_2   = ${body.pay_day_2 ?? null},
+        end_date    = ${(body as Record<string, unknown>).end_date ?? null},
         updated_at  = now()
       WHERE id = ${id}::uuid AND user_id = ${userId}
       RETURNING *

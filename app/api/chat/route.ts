@@ -5,16 +5,20 @@ import type { ChatMessage } from "@/lib/types";
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
-const SYSTEM_PROMPT = `You are a personal finance assistant for a couple managing their household budget.
+function buildSystemPrompt(selectedMonth?: string) {
+  const today = new Date().toLocaleDateString("en-US", { weekday: "long", year: "numeric", month: "long", day: "numeric" });
+  const monthContext = selectedMonth ? `\nThe user is currently viewing: ${selectedMonth}.` : "";
+  return `You are a personal finance assistant for a couple managing their household budget.
 You have access to tools to look up their bills, paychecks, and financial data.
 Be concise and direct. Use dollar amounts with cents when relevant.
-Today's date is ${new Date().toLocaleDateString("en-US", { weekday: "long", year: "numeric", month: "long", day: "numeric" })}.`;
+Today's date is ${today}.${monthContext}`;
+}
 
 export async function POST(req: Request) {
   const { userId } = await auth();
   if (!userId) return new Response("Unauthorized", { status: 401 });
 
-  const { messages }: { messages: ChatMessage[] } = await req.json();
+  const { messages, selectedMonth }: { messages: ChatMessage[]; selectedMonth?: string } = await req.json();
 
   const anthropicMessages: Anthropic.MessageParam[] = messages.map((m) => ({
     role: m.role,
@@ -30,7 +34,7 @@ export async function POST(req: Request) {
           const stream = anthropic.messages.stream({
             model: "claude-sonnet-4-6",
             max_tokens: 1024,
-            system: SYSTEM_PROMPT,
+            system: buildSystemPrompt(selectedMonth),
             tools: financialTools,
             messages: anthropicMessages,
           });

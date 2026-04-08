@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { Bill } from "@/lib/types";
 import type { BillFrequency } from "@/lib/bills";
+import { useMonth } from "@/components/MonthContext";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -14,12 +15,20 @@ interface PaySchedule {
   anchor_date: string | null;
   pay_day_1: number | null;
   pay_day_2: number | null;
+  end_date: string | null;
 }
 
 interface CalendarEvent {
-  type: "bill" | "paycheck";
+  type: "bill" | "paycheck" | "planned";
   name: string;
   amount: number;
+}
+
+interface PlannedExpense {
+  id: string;
+  name: string;
+  amount: number;
+  planned_date: string;
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -146,16 +155,16 @@ function DayPopup({
             <li
               key={i}
               className={`flex items-center justify-between rounded-lg px-3 py-2.5 ${
-                e.type === "paycheck" ? "bg-emerald-500/10" : "bg-rose-500/10"
+                e.type === "paycheck" ? "bg-emerald-500/10" : e.type === "planned" ? "bg-orange-400/10" : "bg-rose-500/10"
               }`}
             >
               <div>
-                <p className={`text-sm font-semibold ${e.type === "paycheck" ? "text-emerald-300" : "text-rose-300"}`}>
+                <p className={`text-sm font-semibold ${e.type === "paycheck" ? "text-emerald-300" : e.type === "planned" ? "text-orange-300" : "text-rose-300"}`}>
                   {e.name}
                 </p>
-                <p className="text-xs text-slate-500 mt-0.5 capitalize">{e.type}</p>
+                <p className="text-xs text-slate-500 mt-0.5 capitalize">{e.type === "planned" ? "Planned expense" : e.type}</p>
               </div>
-              <span className={`tabular-nums text-sm font-bold ${e.type === "paycheck" ? "text-emerald-400" : "text-slate-200"}`}>
+              <span className={`tabular-nums text-sm font-bold ${e.type === "paycheck" ? "text-emerald-400" : e.type === "planned" ? "text-orange-400" : "text-slate-200"}`}>
                 {fmt$(e.amount)}
               </span>
             </li>
@@ -239,7 +248,7 @@ function CalendarGrid({
                           <span
                             key={ei}
                             className={`h-1.5 w-1.5 rounded-full ${
-                              e.type === "paycheck" ? "bg-emerald-400" : "bg-rose-400"
+                              e.type === "paycheck" ? "bg-emerald-400" : e.type === "planned" ? "bg-orange-400" : "bg-rose-400"
                             }`}
                           />
                         ))}
@@ -257,6 +266,8 @@ function CalendarGrid({
                           className={`flex items-center justify-between rounded px-1.5 py-0.5 text-xs leading-tight ${
                             e.type === "paycheck"
                               ? "bg-emerald-500/15 text-emerald-300"
+                              : e.type === "planned"
+                              ? "bg-orange-400/15 text-orange-300"
                               : "bg-rose-500/15 text-rose-300"
                           }`}
                         >
@@ -293,20 +304,15 @@ function CalendarGrid({
 
 // ── Page ──────────────────────────────────────────────────────────────────────
 
-const MONTH_NAMES = [
-  "January","February","March","April","May","June",
-  "July","August","September","October","November","December",
-];
-
 export default function CalendarPage() {
-  const [bills, setBills]       = useState<Bill[]>([]);
+  const { year, month } = useMonth();
+
+  const [bills, setBills]         = useState<Bill[]>([]);
   const [schedules, setSchedules] = useState<PaySchedule[]>([]);
-  const [loading, setLoading]   = useState(true);
+  const [planned, setPlanned]     = useState<PlannedExpense[]>([]);
+  const [loading, setLoading]     = useState(true);
 
-  const now = new Date();
-  const [year, setYear]   = useState(now.getFullYear());
-  const [month, setMonth] = useState(now.getMonth()); // 0-indexed
-
+  // Reload bills/schedules once; reload planned expenses when month changes
   useEffect(() => {
     Promise.all([
       fetch("/api/bills").then((r) => r.json()),
@@ -314,24 +320,15 @@ export default function CalendarPage() {
     ]).then(([b, s]) => {
       setBills(Array.isArray(b) ? b : []);
       setSchedules(Array.isArray(s) ? s : []);
-      setLoading(false);
     });
   }, []);
 
-  function prevMonth() {
-    if (month === 0) { setYear((y) => y - 1); setMonth(11); }
-    else setMonth((m) => m - 1);
-  }
-
-  function nextMonth() {
-    if (month === 11) { setYear((y) => y + 1); setMonth(0); }
-    else setMonth((m) => m + 1);
-  }
-
-  function goToday() {
-    setYear(now.getFullYear());
-    setMonth(now.getMonth());
-  }
+  useEffect(() => {
+    setLoading(true);
+    fetch(`/api/planned-expenses?year=${year}&month=${month}`)
+      .then((r) => r.json())
+      .then((p) => { setPlanned(Array.isArray(p) ? p : []); setLoading(false); });
+  }, [year, month]);
 
   // Build events map: day → events[]
   const eventsByDay = new Map<number, CalendarEvent[]>();
@@ -347,65 +344,44 @@ export default function CalendarPage() {
     }
   }
 
-  for (const schedule of schedules) {
+  const activeSchedules = schedules.filter((s) => {
+    if (!s.end_date) return true;
+    const endDate = new Date(String(s.end_date).slice(0, 10) + "T00:00:00");
+    return endDate >= new Date(year, month, 1);
+  });
+
+  for (const schedule of activeSchedules) {
     for (const day of payDaysInMonth(schedule, year, month)) {
       addEvent(day, { type: "paycheck", name: schedule.name, amount: Number(schedule.amount) });
     }
   }
 
-  // Sort each day: paychecks first, then bills
-  for (const [day, events] of eventsByDay) {
-    eventsByDay.set(day, events.sort((a, b) =>
-      a.type === b.type ? 0 : a.type === "paycheck" ? -1 : 1
-    ));
+  for (const p of planned) {
+    const d = new Date(String(p.planned_date).slice(0, 10) + "T00:00:00");
+    addEvent(d.getDate(), { type: "planned", name: p.name, amount: Number(p.amount) });
   }
 
-  const isCurrentMonth = year === now.getFullYear() && month === now.getMonth();
+  // Sort each day: paychecks first, then planned, then bills
+  const typeOrder = { paycheck: 0, planned: 1, bill: 2 };
+  for (const [day, events] of eventsByDay) {
+    eventsByDay.set(day, events.sort((a, b) => typeOrder[a.type] - typeOrder[b.type]));
+  }
 
   return (
     <div className="w-full overflow-hidden space-y-3">
-      {/* Header */}
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold tracking-tight">Calendar</h1>
-        {/* Legend — desktop only */}
         <div className="hidden sm:flex items-center gap-4">
-          <div className="flex items-center gap-1.5">
-            <span className="h-2.5 w-2.5 rounded-sm bg-emerald-500/60" />
-            <span className="text-xs text-slate-400">Paycheck</span>
-          </div>
-          <div className="flex items-center gap-1.5">
-            <span className="h-2.5 w-2.5 rounded-sm bg-rose-500/60" />
-            <span className="text-xs text-slate-400">Bill</span>
-          </div>
-        </div>
-      </div>
-
-      {/* Month nav */}
-      <div className="flex items-center justify-between sm:justify-start gap-1">
-        {!isCurrentMonth && (
-          <button
-            onClick={goToday}
-            className="text-xs font-medium text-slate-400 hover:text-slate-200 transition-colors px-2 py-1 rounded-md hover:bg-slate-800"
-          >
-            Today
-          </button>
-        )}
-        <div className="flex items-center gap-1 mx-auto sm:mx-0">
-          <button
-            onClick={prevMonth}
-            className="flex items-center justify-center w-8 h-8 rounded-lg text-slate-400 hover:text-slate-200 hover:bg-slate-800 transition-colors"
-          >
-            ‹
-          </button>
-          <span className="text-base sm:text-lg font-semibold text-slate-200 w-36 sm:w-44 text-center tabular-nums">
-            {MONTH_NAMES[month]} {year}
-          </span>
-          <button
-            onClick={nextMonth}
-            className="flex items-center justify-center w-8 h-8 rounded-lg text-slate-400 hover:text-slate-200 hover:bg-slate-800 transition-colors"
-          >
-            ›
-          </button>
+          {[
+            { color: "bg-emerald-500/60", label: "Paycheck" },
+            { color: "bg-orange-400/60",  label: "Planned" },
+            { color: "bg-rose-500/60",    label: "Bill" },
+          ].map(({ color, label }) => (
+            <div key={label} className="flex items-center gap-1.5">
+              <span className={`h-2.5 w-2.5 rounded-sm ${color}`} />
+              <span className="text-xs text-slate-400">{label}</span>
+            </div>
+          ))}
         </div>
       </div>
 
