@@ -39,13 +39,18 @@ A private, mobile-first web app for paycheck-aware budgeting. Built for two user
 Run this against your Postgres database:
 
 ```sql
-create table paychecks (
+-- One pay schedule per user. Frequencies: once | monthly | twice_monthly | biweekly
+-- Current/next pay dates are computed at runtime — not stored.
+create table pay_schedules (
   id uuid primary key default gen_random_uuid(),
-  user_id text not null,
+  user_id text not null unique,
   amount numeric(10,2) not null,
-  pay_date date not null,
-  next_pay_date date not null,
-  created_at timestamptz default now()
+  frequency text not null check (frequency in ('once', 'monthly', 'twice_monthly', 'biweekly')),
+  anchor_date date not null,   -- known pay date; drives biweekly interval calc
+  pay_day_1 integer check (pay_day_1 between 1 and 31),  -- monthly day / 1st twice-monthly day
+  pay_day_2 integer check (pay_day_2 between 1 and 31),  -- 2nd twice-monthly day (e.g. 15)
+  created_at timestamptz default now(),
+  updated_at timestamptz default now()
 );
 
 create table bills (
@@ -59,8 +64,7 @@ create table bills (
   created_at timestamptz default now()
 );
 
--- Indexes for user_id lookups
-create index on paychecks (user_id, pay_date desc);
+create index on pay_schedules (user_id);
 create index on bills (user_id, active, due_day);
 ```
 

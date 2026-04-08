@@ -1,12 +1,22 @@
-// Database types matching the Supabase schema
+import type { Frequency } from "./pay-schedule";
 
-export interface Paycheck {
+export type { Frequency };
+
+export interface Income {
   id: string;
   user_id: string;
   amount: number;
-  pay_date: string; // ISO date string
-  next_pay_date: string; // ISO date string
+  source: string;
+  date: string; // ISO date
+  notes: string | null;
   created_at: string;
+}
+
+export interface IncomeInput {
+  amount: number;
+  source: string;
+  date: string;
+  notes?: string;
 }
 
 export interface Bill {
@@ -32,10 +42,13 @@ export interface Transaction {
 
 // API request/response shapes
 
-export interface PaycheckInput {
+export interface PayScheduleInput {
+  name: string;
   amount: number;
-  pay_date: string;
-  next_pay_date: string;
+  frequency: Frequency;
+  anchor_date: string; // ISO date — required for biweekly; reference for others
+  pay_day_1?: number;  // required for monthly + twice_monthly
+  pay_day_2?: number;  // required for twice_monthly
 }
 
 export interface BillInput {
