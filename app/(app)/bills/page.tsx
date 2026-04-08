@@ -418,16 +418,17 @@ function PlannedSection() {
   }
 
   return (
-    <section className={card + " space-y-3"}>
+    <div className="space-y-3">
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-base font-semibold text-slate-200">Planned Expenses</h2>
-          <p className="text-xs text-slate-500 mt-0.5">One-time expenses by month</p>
+          <h2 className="text-xl font-bold">Planned Expenses</h2>
+          <p className="text-sm text-slate-500 mt-0.5">One-time expenses by month</p>
         </div>
         {!showForm && !editing && (
           <button onClick={() => setShowForm(true)} className={btn.primarySm}>+ Add</button>
         )}
       </div>
+    <section className={card + " space-y-3"}>
 
       {showForm && (
         <div className="rounded-lg border border-orange-400/20 bg-slate-900/50 p-3">
@@ -482,6 +483,7 @@ function PlannedSection() {
         </ul>
       )}
     </section>
+    </div>
   );
 }
 
@@ -521,8 +523,8 @@ function DiscretionarySection() {
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-xl font-bold">Discretionary</h2>
-          <p className="text-sm text-slate-500 mt-0.5">Reserved amounts kept as a buffer each paycheck</p>
+          <h2 className="text-xl font-bold">Buffer</h2>
+          <p className="text-sm text-slate-500 mt-0.5">Discretionary amounts kept as a buffer each paycheck</p>
         </div>
         {!showForm && !editing && (
           <button onClick={() => setShowForm(true)} className={btn.primarySm}>
@@ -542,15 +544,15 @@ function DiscretionarySection() {
       {items.length === 0 && !showForm ? (
         <p className="text-slate-500 text-sm">No discretionary items yet.</p>
       ) : (
-        <div className={card}>
+        <div className={card + " space-y-2"}>
           {items.map((item) => (
-            <div key={item.id} className="flex items-center justify-between py-3 border-b border-slate-700/50 last:border-0">
+            <div key={item.id} className="flex items-center justify-between rounded-lg bg-slate-900/60 px-3 py-3 ring-1 ring-white/5">
               <div>
-                <p className="text-sm font-medium text-slate-100">{item.name}</p>
+                <p className="text-sm font-semibold text-slate-100">{item.name}</p>
                 <p className="text-xs text-slate-500 mt-0.5">{DISC_FREQUENCIES.find((f) => f.value === item.frequency)?.label ?? "Monthly"}</p>
               </div>
               <div className="flex items-center gap-3 ml-4 shrink-0">
-                <span className="tabular-nums text-sm font-semibold text-slate-200">
+                <span className="tabular-nums text-sm font-bold text-slate-200">
                   {fmt$(item.amount)}
                 </span>
                 <button
@@ -663,7 +665,7 @@ function SortableBillRow({
     <div
       ref={setNodeRef}
       style={{ transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.4 : 1 }}
-      className="group flex items-center gap-2 py-4 border-b border-slate-700/50 last:border-0"
+      className="group flex items-center gap-2 rounded-lg bg-slate-900/60 px-3 py-3 ring-1 ring-white/5"
     >
       {/* Drag handle */}
       <button
@@ -681,14 +683,14 @@ function SortableBillRow({
 
       <div className="flex items-center justify-between flex-1 min-w-0">
         <div className="min-w-0">
-          <p className="text-base font-semibold text-slate-100 truncate">{bill.name}</p>
-          <p className="text-sm text-slate-500 mt-0.5">
+          <p className="text-sm font-semibold text-slate-100 truncate">{bill.name}</p>
+          <p className="text-xs text-slate-500 mt-0.5">
             {frequencyLabel(bill.frequency)} · next {formatDueDate(bill)}
             {!bill.recurring && " · one-time"}
           </p>
         </div>
         <div className="flex items-center gap-3 ml-4 shrink-0">
-          <span className="tabular-nums text-base font-bold text-slate-200">{fmt$(bill.amount)}</span>
+          <span className="tabular-nums text-sm font-bold text-slate-200">{fmt$(bill.amount)}</span>
           <button onClick={onEdit} className="text-xs font-medium text-slate-400 transition-colors duration-150 hover:text-slate-200">Edit</button>
           <DeleteConfirm
             id={bill.id}
@@ -735,7 +737,7 @@ function SortableCategoryCard({
         </button>
         <h2 className="text-xs font-semibold text-slate-400 uppercase tracking-widest">{cat}</h2>
       </div>
-      {children}
+      <div className="space-y-2">{children}</div>
     </div>
   );
 }

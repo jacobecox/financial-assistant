@@ -5,6 +5,7 @@ import Link from "next/link";
 import { monthlyEquivalent } from "@/lib/bills";
 import { useMonth } from "@/components/MonthContext";
 import type { Bill, DiscretionaryItem } from "@/lib/types";
+import type { BillFrequency } from "@/lib/bills";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -92,7 +93,7 @@ function BreakdownBar({
       <div className="flex h-5 overflow-hidden rounded-full bg-slate-700/60 gap-px">
         <div className={`${t} bg-rose-500/80 rounded-l-full`}      style={{ width: mounted ? `${billsPct}%`   : "0%" }} />
         <div className={`${t} bg-orange-400/80`}                    style={{ width: mounted ? `${plannedPct}%` : "0%" }} />
-        <div className={`${t} bg-amber-500/80`}                     style={{ width: mounted ? `${discPct}%`    : "0%" }} />
+        <div className={`${t} bg-violet-500/80`}                    style={{ width: mounted ? `${discPct}%`    : "0%" }} />
         {!overspent && (
           <div className={`${t} bg-emerald-500 rounded-r-full flex-1`} style={{ width: mounted ? `${savingsPct}%` : "0%" }} />
         )}
@@ -102,7 +103,7 @@ function BreakdownBar({
         {[
           { color: "bg-rose-500/80",    label: "Bills",    value: bills,         pct: billsPct,    textColor: "text-rose-400" },
           { color: "bg-orange-400/80",  label: "Planned",  value: planned,       pct: plannedPct,  textColor: "text-orange-400" },
-          { color: "bg-amber-500/80",   label: "Buffer",   value: discretionary, pct: discPct,     textColor: "text-amber-400" },
+          { color: "bg-violet-500/80",  label: "Buffer",   value: discretionary, pct: discPct,     textColor: "text-violet-400" },
           { color: "bg-emerald-500",    label: "Savings",  value: savings,       pct: savingsPct,  textColor: "text-emerald-400" },
         ].map(({ color, label, value, pct, textColor }) => (
           <div key={label} className="space-y-0.5">
@@ -125,6 +126,120 @@ function BreakdownBar({
           Expenses exceed income this month. Review your bills or discretionary items.
         </p>
       )}
+    </div>
+  );
+}
+
+// ─── Upcoming bills helpers ───────────────────────────────────────────────────
+
+function addInterval(date: Date, frequency: BillFrequency): Date {
+  const d = new Date(date);
+  switch (frequency) {
+    case "weekly":      d.setDate(d.getDate() + 7);        break;
+    case "biweekly":    d.setDate(d.getDate() + 14);       break;
+    case "quarterly":   d.setMonth(d.getMonth() + 3);      break;
+    case "semi_annual": d.setMonth(d.getMonth() + 6);      break;
+    case "annual":      d.setFullYear(d.getFullYear() + 1); break;
+  }
+  return d;
+}
+
+interface UpcomingBill {
+  name: string;
+  amount: number;
+  date: Date;
+  daysUntil: number;
+}
+
+function getUpcomingBills(bills: Bill[], days = 14): UpcomingBill[] {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const cutoff = new Date(today);
+  cutoff.setDate(cutoff.getDate() + days);
+
+  const results: UpcomingBill[] = [];
+
+  for (const bill of bills.filter((b) => b.active && b.recurring)) {
+    // Check today's month and next month to catch bills near month boundaries
+    const months = [
+      { year: today.getFullYear(), month: today.getMonth() },
+      { year: cutoff.getFullYear(), month: cutoff.getMonth() },
+    ];
+    const seen = new Set<string>();
+
+    for (const { year, month } of months) {
+      const monthEnd = new Date(year, month + 1, 0);
+
+      if (bill.frequency === "monthly") {
+        if (!bill.due_day) continue;
+        const d = new Date(year, month, bill.due_day);
+        const key = d.toISOString();
+        if (!seen.has(key) && d >= today && d <= cutoff) {
+          seen.add(key);
+          results.push({ name: bill.name, amount: Number(bill.amount), date: d, daysUntil: Math.round((d.getTime() - today.getTime()) / 86400000) });
+        }
+      } else if (bill.frequency === "semi_monthly") {
+        if (!bill.due_day) continue;
+        const days2 = [bill.due_day];
+        const d2 = bill.due_day_2 ?? (bill.due_day <= 15 ? bill.due_day + 15 : bill.due_day - 15);
+        if (d2 !== bill.due_day) days2.push(d2);
+        for (const day of days2) {
+          if (day < 1 || day > monthEnd.getDate()) continue;
+          const d = new Date(year, month, day);
+          const key = d.toISOString();
+          if (!seen.has(key) && d >= today && d <= cutoff) {
+            seen.add(key);
+            results.push({ name: bill.name, amount: Number(bill.amount), date: d, daysUntil: Math.round((d.getTime() - today.getTime()) / 86400000) });
+          }
+        }
+      } else if (bill.anchor_date) {
+        let cur = new Date(String(bill.anchor_date).slice(0, 10) + "T00:00:00");
+        const monthStart = new Date(year, month, 1);
+        while (cur < monthStart) cur = addInterval(cur, bill.frequency);
+        while (cur <= monthEnd) {
+          const key = cur.toISOString();
+          if (!seen.has(key) && cur >= today && cur <= cutoff) {
+            seen.add(key);
+            results.push({ name: bill.name, amount: Number(bill.amount), date: new Date(cur), daysUntil: Math.round((cur.getTime() - today.getTime()) / 86400000) });
+          }
+          cur = addInterval(cur, bill.frequency);
+        }
+      }
+    }
+  }
+
+  return results.sort((a, b) => a.date.getTime() - b.date.getTime());
+}
+
+// ─── Upcoming bills widget ────────────────────────────────────────────────────
+
+function UpcomingBills({ bills }: { bills: Bill[] }) {
+  const upcoming = getUpcomingBills(bills, 14);
+
+  if (upcoming.length === 0) return null;
+
+  return (
+    <div className={card + " space-y-3"}>
+      <h2 className="text-xs font-semibold uppercase tracking-widest text-slate-400">Upcoming Bills · Next 14 Days</h2>
+      <ul className="space-y-2">
+        {upcoming.map((b, i) => {
+          const dateStr = b.date.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
+          const urgency = b.daysUntil === 0 ? "text-red-400" : b.daysUntil <= 3 ? "text-orange-400" : "text-slate-400";
+          const badge = b.daysUntil === 0 ? "Today" : b.daysUntil === 1 ? "Tomorrow" : `${b.daysUntil}d`;
+          return (
+            <li key={i} className="flex items-center justify-between gap-3">
+              <div className="flex items-center gap-3 min-w-0">
+                <span className={`text-xs font-semibold tabular-nums w-16 shrink-0 ${urgency}`}>{badge}</span>
+                <div className="min-w-0">
+                  <p className="text-sm font-medium text-slate-200 truncate">{b.name}</p>
+                  <p className="text-xs text-slate-500">{dateStr}</p>
+                </div>
+              </div>
+              <span className="text-sm font-bold tabular-nums text-slate-300 shrink-0">{fmt$(b.amount)}</span>
+            </li>
+          );
+        })}
+      </ul>
     </div>
   );
 }
@@ -253,6 +368,8 @@ export default function OverviewPage() {
         planned={totalPlanned}
         discretionary={totalDiscretionary}
       />
+
+      <UpcomingBills bills={bills} />
 
       {!hasSchedules && (
         <p className="text-center text-sm text-slate-500">
