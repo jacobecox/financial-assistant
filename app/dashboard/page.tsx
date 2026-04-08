@@ -19,19 +19,39 @@ interface PayScheduleResponse {
   next_pay_date: string | null;
 }
 
+// ─── Design tokens ────────────────────────────────────────────────────────────
+
+const btn = {
+  primary:
+    "inline-flex items-center justify-center rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white transition-all duration-150 hover:bg-emerald-500 hover:shadow-lg hover:shadow-emerald-500/25 active:scale-95 disabled:pointer-events-none disabled:opacity-40",
+  primarySm:
+    "inline-flex items-center justify-center rounded-lg bg-emerald-600 px-3 py-1.5 text-sm font-medium text-white transition-all duration-150 hover:bg-emerald-500 hover:shadow-md hover:shadow-emerald-500/25 active:scale-95 disabled:pointer-events-none disabled:opacity-40",
+  secondary:
+    "inline-flex items-center justify-center rounded-lg bg-slate-700 px-4 py-2 text-sm font-medium text-slate-200 transition-all duration-150 hover:bg-slate-600 hover:text-white active:scale-95",
+  ghost:
+    "text-xs font-medium text-emerald-400 transition-colors duration-150 hover:text-emerald-300",
+  danger:
+    "inline-flex items-center justify-center rounded-md bg-red-500/15 px-2.5 py-1 text-xs font-semibold text-red-400 ring-1 ring-inset ring-red-500/25 transition-all duration-150 hover:bg-red-500/25 hover:text-red-300 active:scale-95",
+  muted:
+    "text-xs text-slate-500 transition-colors duration-150 hover:text-slate-300",
+};
+
+const card = "rounded-xl bg-slate-800 ring-1 ring-white/5 p-4";
+
+const inputCls =
+  "w-full rounded-lg bg-slate-900 px-3 py-2 text-sm text-slate-100 placeholder-slate-600 ring-1 ring-white/5 transition-shadow duration-150 focus:outline-none focus:ring-2 focus:ring-emerald-500/50 cursor-pointer";
+
+const labelCls = "block text-xs font-medium text-slate-400 mb-1.5";
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 const today = new Date().toISOString().split("T")[0];
 
-const inputCls =
-  "w-full rounded-lg bg-slate-900 px-3 py-2 text-sm placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-sky-600 cursor-pointer";
-const labelCls = "block text-xs text-slate-400 mb-1";
-
-function formatCurrency(n: number) {
+function fmt$(n: number) {
   return Number(n).toLocaleString("en-US", { style: "currency", currency: "USD" });
 }
 
-function formatDate(iso: string) {
+function fmtDate(iso: string) {
   return new Date(iso + "T00:00:00").toLocaleDateString("en-US", {
     month: "short", day: "numeric", year: "numeric",
   });
@@ -45,18 +65,55 @@ function ordinal(n: number) {
 
 function describeSchedule(s: PayScheduleResponse) {
   switch (s.frequency) {
-    case "twice_monthly":
-      return `${ordinal(s.pay_day_1!)} & ${ordinal(s.pay_day_2!)} monthly`;
-    case "monthly":
-      return `${ordinal(s.pay_day_1!)} of each month`;
-    case "biweekly":
-      return "Every 2 weeks";
-    case "once":
-      return `One-time · ${formatDate(s.anchor_date)}`;
+    case "twice_monthly": return `${ordinal(s.pay_day_1!)} & ${ordinal(s.pay_day_2!)} monthly`;
+    case "monthly":       return `${ordinal(s.pay_day_1!)} of each month`;
+    case "biweekly":      return "Every 2 weeks";
+    case "once":          return `One-time · ${fmtDate(s.anchor_date)}`;
   }
 }
 
-// ─── Schedule form (shared for add + edit) ────────────────────────────────────
+// ─── Inline delete confirmation ───────────────────────────────────────────────
+
+function DeleteConfirm({
+  id,
+  confirmingId,
+  onConfirm,
+  onRequest,
+  onCancel,
+  label = "Remove",
+}: {
+  id: string;
+  confirmingId: string | null;
+  onConfirm: () => void;
+  onRequest: () => void;
+  onCancel: () => void;
+  label?: string;
+}) {
+  const active = confirmingId === id;
+  return (
+    <div className="relative">
+      {/* Keep button in layout always so row doesn't shift */}
+      <button
+        onClick={active ? onCancel : onRequest}
+        className={active ? "invisible pointer-events-none " + btn.muted : btn.muted}
+      >
+        {label}
+      </button>
+
+      {active && (
+        <div className="absolute bottom-full right-0 z-20 mb-2 flex items-center gap-2 rounded-lg border border-slate-600/70 bg-slate-900 px-3 py-2 shadow-xl shadow-black/50 whitespace-nowrap">
+          {/* small caret */}
+          <span className="absolute -bottom-1 right-3 h-2 w-2 rotate-45 border-b border-r border-slate-600/70 bg-slate-900" />
+          <span className="text-xs font-medium text-slate-300">Delete?</span>
+          <button onClick={onConfirm} className={btn.danger}>Confirm</button>
+          <button onClick={onCancel} className="text-slate-500 transition-colors hover:text-slate-200 text-sm leading-none">✕</button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Schedule form ────────────────────────────────────────────────────────────
 
 const EMPTY_FORM = {
   name: "",
@@ -111,12 +168,10 @@ function ScheduleForm({
             className={inputCls}
           />
         </div>
-
         <div className="col-span-2 sm:col-span-1">
           <label className={labelCls}>Amount per paycheck</label>
           <CurrencyInput value={form.amount} onChange={(v) => set({ amount: v })} className={inputCls} />
         </div>
-
         <div className="col-span-2 sm:col-span-1">
           <label className={labelCls}>Frequency</label>
           <select
@@ -130,9 +185,8 @@ function ScheduleForm({
             <option value="once">One-time</option>
           </select>
         </div>
-
         {form.frequency === "twice_monthly" && (
-          <>{dayInput("pay_day_1", "First pay day")} {dayInput("pay_day_2", "Second pay day")}</>
+          <>{dayInput("pay_day_1", "First pay day")}{dayInput("pay_day_2", "Second pay day")}</>
         )}
         {form.frequency === "monthly" && dayInput("pay_day_1", "Pay day (day of month)")}
         {(form.frequency === "biweekly" || form.frequency === "once") && (
@@ -140,29 +194,15 @@ function ScheduleForm({
             <label className={labelCls}>
               {form.frequency === "biweekly" ? "Most recent pay date" : "Pay date"}
             </label>
-            <DateInput
-              value={form.anchor_date}
-              onChange={(v) => set({ anchor_date: v })}
-              required
-              className={inputCls}
-            />
+            <DateInput value={form.anchor_date} onChange={(v) => set({ anchor_date: v })} required className={inputCls} />
           </div>
         )}
       </div>
-
-      <div className="flex gap-2">
-        <button
-          type="submit" disabled={saving}
-          className="rounded-lg bg-sky-600 px-4 py-2 text-sm font-medium hover:bg-sky-500 disabled:opacity-50"
-        >
-          {saving ? "Saving..." : "Save"}
+      <div className="flex gap-2 pt-1">
+        <button type="submit" disabled={saving} className={btn.primary}>
+          {saving ? "Saving…" : "Save"}
         </button>
-        <button
-          type="button" onClick={onCancel}
-          className="rounded-lg bg-slate-700 px-4 py-2 text-sm font-medium hover:bg-slate-600"
-        >
-          Cancel
-        </button>
+        <button type="button" onClick={onCancel} className={btn.secondary}>Cancel</button>
       </div>
     </form>
   );
@@ -185,7 +225,7 @@ function PayScheduleSection({
     schedules.length === 0 ? "new" : null
   );
   const [saving, setSaving] = useState(false);
-  const [deleting, setDeleting] = useState<string | null>(null);
+  const [confirmingDelete, setConfirmingDelete] = useState<string | null>(null);
 
   function formFromSchedule(s: PayScheduleResponse): typeof EMPTY_FORM {
     return {
@@ -216,16 +256,12 @@ function PayScheduleSection({
 
       if (editingId === "new") {
         const res = await fetch("/api/pay-schedule", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(body),
+          method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
         });
         if (res.ok) { onAdded(await res.json()); setEditingId(null); }
       } else {
         const res = await fetch(`/api/pay-schedule/${editingId}`, {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(body),
+          method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
         });
         if (res.ok) { onUpdated(await res.json()); setEditingId(null); }
       }
@@ -235,67 +271,60 @@ function PayScheduleSection({
   }
 
   async function handleDelete(id: string) {
-    setDeleting(id);
-    try {
-      const res = await fetch(`/api/pay-schedule/${id}`, { method: "DELETE" });
-      if (res.ok) onDeleted(id);
-    } finally {
-      setDeleting(null);
-    }
+    const res = await fetch(`/api/pay-schedule/${id}`, { method: "DELETE" });
+    if (res.ok) { onDeleted(id); setConfirmingDelete(null); }
   }
 
   return (
-    <section className="rounded-xl bg-slate-800 p-4 space-y-3">
+    <section className={card + " space-y-3"}>
       <div className="flex items-center justify-between">
-        <h2 className="text-sm font-medium text-slate-300">Pay Schedules</h2>
+        <h2 className="text-sm font-semibold text-slate-200">Pay Schedules</h2>
         {editingId !== "new" && (
-          <button
-            type="button"
-            onClick={() => setEditingId("new")}
-            className="text-xs text-sky-400 hover:text-sky-300"
-          >
+          <button onClick={() => { setEditingId("new"); setConfirmingDelete(null); }} className={btn.ghost}>
             + Add
           </button>
         )}
       </div>
 
-      {/* Existing schedules */}
       {schedules.length > 0 && (
-        <ul className="divide-y divide-slate-700">
+        <ul className="space-y-2">
           {schedules.map((s) => (
-            <li key={s.id} className="py-2.5 space-y-2">
+            <li key={s.id}>
               {editingId === s.id ? (
-                <ScheduleForm
-                  initial={formFromSchedule(s)}
-                  onSave={handleSave}
-                  onCancel={() => setEditingId(null)}
-                  saving={saving}
-                />
+                <div className="rounded-lg border border-emerald-500/20 bg-slate-900/50 p-3">
+                  <ScheduleForm
+                    initial={formFromSchedule(s)}
+                    onSave={handleSave}
+                    onCancel={() => setEditingId(null)}
+                    saving={saving}
+                  />
+                </div>
               ) : (
-                <div className="flex items-start justify-between gap-2">
-                  <div>
-                    <p className="text-sm font-medium">{s.name}</p>
-                    <p className="text-xs text-slate-400">
-                      {describeSchedule(s)} · {formatCurrency(s.amount)}
-                    </p>
+                <div className="group flex items-start justify-between rounded-lg border-l-2 border-emerald-600/30 bg-slate-900/60 px-3 py-2.5 transition-colors duration-150 hover:border-emerald-500/60 hover:bg-slate-900">
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium text-slate-100">{s.name}</p>
+                    <p className="text-xs text-slate-400 mt-0.5">{describeSchedule(s)}</p>
                     <p className="text-xs text-slate-500 mt-0.5">
-                      Next: {s.next_pay_date ? formatDate(s.next_pay_date) : "—"}
+                      Next: {s.next_pay_date ? fmtDate(s.next_pay_date) : "—"}
                     </p>
                   </div>
-                  <div className="flex gap-3 shrink-0 text-xs mt-0.5">
-                    <button
-                      onClick={() => setEditingId(s.id)}
-                      className="text-sky-400 hover:text-sky-300"
-                    >
-                      Edit
-                    </button>
-                    <button
-                      onClick={() => handleDelete(s.id)}
-                      disabled={deleting === s.id}
-                      className="text-slate-500 hover:text-red-400 disabled:opacity-50"
-                    >
-                      {deleting === s.id ? "..." : "Remove"}
-                    </button>
+                  <div className="flex flex-col items-end gap-1.5 shrink-0 ml-4">
+                    <p className="text-sm font-semibold tabular-nums text-slate-100">{fmt$(s.amount)}</p>
+                    <div className="flex items-center gap-3">
+                      <button
+                        onClick={() => { setEditingId(s.id); setConfirmingDelete(null); }}
+                        className={btn.ghost}
+                      >
+                        Edit
+                      </button>
+                      <DeleteConfirm
+                        id={s.id}
+                        confirmingId={confirmingDelete}
+                        onRequest={() => setConfirmingDelete(s.id)}
+                        onConfirm={() => handleDelete(s.id)}
+                        onCancel={() => setConfirmingDelete(null)}
+                      />
+                    </div>
                   </div>
                 </div>
               )}
@@ -304,22 +333,21 @@ function PayScheduleSection({
         </ul>
       )}
 
-      {/* Add new form */}
       {editingId === "new" && (
-        <ScheduleForm
-          initial={EMPTY_FORM}
-          onSave={handleSave}
-          onCancel={() => setEditingId(schedules.length === 0 ? "new" : null)}
-          saving={saving}
-        />
+        <div className="rounded-lg border border-emerald-500/20 bg-slate-900/50 p-3">
+          <ScheduleForm
+            initial={EMPTY_FORM}
+            onSave={handleSave}
+            onCancel={() => setEditingId(schedules.length === 0 ? "new" : null)}
+            saving={saving}
+          />
+        </div>
       )}
 
       {schedules.length === 0 && editingId !== "new" && (
         <p className="text-sm text-slate-500">
           No pay schedules yet.{" "}
-          <button className="text-sky-400 hover:text-sky-300" onClick={() => setEditingId("new")}>
-            Add one
-          </button>
+          <button className={btn.ghost} onClick={() => setEditingId("new")}>Add one</button>
         </p>
       )}
     </section>
@@ -335,6 +363,7 @@ export default function DashboardPage() {
   const [income, setIncome] = useState<Income[]>([]);
   const [showIncomeForm, setShowIncomeForm] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [confirmingDelete, setConfirmingDelete] = useState<string | null>(null);
   const [incomeForm, setIncomeForm] = useState({
     amount: "0.00",
     source: "Paycheck",
@@ -342,15 +371,12 @@ export default function DashboardPage() {
     notes: "",
   });
 
-  // Earliest current_pay_date across all schedules = start of "this period"
   const periodStart = schedules?.length
     ? [...schedules].map((s) => s.current_pay_date).sort()[0]
     : undefined;
 
   useEffect(() => {
-    fetch("/api/pay-schedule")
-      .then((r) => r.json())
-      .then(setSchedules);
+    fetch("/api/pay-schedule").then((r) => r.json()).then(setSchedules);
     fetchIncome();
   }, []);
 
@@ -387,6 +413,7 @@ export default function DashboardPage() {
   async function handleDeleteIncome(id: string) {
     await fetch(`/api/income/${id}`, { method: "DELETE" });
     setIncome((prev) => prev.filter((e) => e.id !== id));
+    setConfirmingDelete(null);
   }
 
   const periodIncome = periodStart
@@ -394,27 +421,27 @@ export default function DashboardPage() {
     : income;
   const totalIncome = periodIncome.reduce((sum, e) => sum + Number(e.amount), 0);
 
-  // Header period range
   const latestNextPayDate = schedules?.length
     ? [...schedules].map((s) => s.next_pay_date).filter(Boolean).sort().at(-1)
     : undefined;
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-4">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-xl font-semibold">Paycheck Overview</h1>
-          {periodStart && (
-            <p className="text-sm text-slate-400 mt-0.5">
-              {formatDate(periodStart)}
-              {latestNextPayDate && <> → {formatDate(latestNextPayDate)}</>}
+          <h1 className="text-xl font-semibold tracking-tight">Paycheck Overview</h1>
+          {periodStart ? (
+            <p className="text-xs text-slate-400 mt-0.5 tabular-nums">
+              {fmtDate(periodStart)}{latestNextPayDate && <> → {fmtDate(latestNextPayDate)}</>}
             </p>
+          ) : (
+            <p className="text-xs text-slate-500 mt-0.5">No pay schedule set up yet</p>
           )}
         </div>
         <button
-          onClick={() => setShowIncomeForm((v) => !v)}
-          className="rounded-lg bg-sky-600 px-3 py-1.5 text-sm font-medium hover:bg-sky-500 transition-colors"
+          onClick={() => { setShowIncomeForm((v) => !v); setConfirmingDelete(null); }}
+          className={btn.primarySm}
         >
           + Add Income
         </button>
@@ -432,114 +459,114 @@ export default function DashboardPage() {
 
       {/* Add income form */}
       {showIncomeForm && (
-        <form
-          onSubmit={handleAddIncome}
-          className="rounded-xl bg-slate-800 border border-slate-700 p-4 space-y-3"
-        >
-          <h2 className="text-sm font-medium text-slate-300">New Income Entry</h2>
-          <div className="grid grid-cols-2 gap-3">
-            <div className="col-span-2 sm:col-span-1">
-              <label className={labelCls}>Amount</label>
-              <CurrencyInput
-                value={incomeForm.amount}
-                onChange={(v) => setIncomeForm((f) => ({ ...f, amount: v }))}
-                className={inputCls}
-              />
-            </div>
-            <div className="col-span-2 sm:col-span-1">
-              <label className={labelCls}>Date</label>
-              <DateInput
-                value={incomeForm.date}
-                onChange={(v) => setIncomeForm((f) => ({ ...f, date: v }))}
-                required
-                className={inputCls}
-              />
-            </div>
-            <div className="col-span-2">
-              <label className={labelCls}>Source</label>
-              <div className="flex flex-wrap gap-2">
-                {INCOME_SOURCES.map((s) => (
-                  <button
-                    key={s} type="button"
-                    onClick={() => setIncomeForm((f) => ({ ...f, source: s }))}
-                    className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
-                      incomeForm.source === s
-                        ? "bg-sky-600 text-white"
-                        : "bg-slate-700 text-slate-300 hover:bg-slate-600"
-                    }`}
-                  >
-                    {s}
-                  </button>
-                ))}
+        <section className={card + " space-y-3 border border-emerald-500/10"}>
+          <h2 className="text-sm font-semibold text-slate-200">New Income Entry</h2>
+          <form onSubmit={handleAddIncome} className="space-y-3">
+            <div className="grid grid-cols-2 gap-3">
+              <div className="col-span-2 sm:col-span-1">
+                <label className={labelCls}>Amount</label>
+                <CurrencyInput
+                  value={incomeForm.amount}
+                  onChange={(v) => setIncomeForm((f) => ({ ...f, amount: v }))}
+                  className={inputCls}
+                />
               </div>
-              {!INCOME_SOURCES.includes(incomeForm.source) && (
+              <div className="col-span-2 sm:col-span-1">
+                <label className={labelCls}>Date</label>
+                <DateInput
+                  value={incomeForm.date}
+                  onChange={(v) => setIncomeForm((f) => ({ ...f, date: v }))}
+                  required
+                  className={inputCls}
+                />
+              </div>
+              <div className="col-span-2">
+                <label className={labelCls}>Source</label>
+                <div className="flex flex-wrap gap-2">
+                  {INCOME_SOURCES.map((s) => (
+                    <button
+                      key={s} type="button"
+                      onClick={() => setIncomeForm((f) => ({ ...f, source: s }))}
+                      className={`rounded-full px-3 py-1 text-xs font-medium transition-all duration-150 active:scale-95 ${
+                        incomeForm.source === s
+                          ? "bg-emerald-600 text-white shadow-md shadow-emerald-500/20"
+                          : "bg-slate-700 text-slate-300 hover:bg-slate-600 hover:text-white"
+                      }`}
+                    >
+                      {s}
+                    </button>
+                  ))}
+                </div>
+                {!INCOME_SOURCES.includes(incomeForm.source) && (
+                  <input
+                    type="text"
+                    value={incomeForm.source}
+                    onChange={(e) => setIncomeForm((f) => ({ ...f, source: e.target.value }))}
+                    className={"mt-2 " + inputCls}
+                    placeholder="Custom source…"
+                  />
+                )}
+              </div>
+              <div className="col-span-2">
+                <label className={labelCls}>Notes (optional)</label>
                 <input
                   type="text"
-                  value={incomeForm.source}
-                  onChange={(e) => setIncomeForm((f) => ({ ...f, source: e.target.value }))}
-                  className={"mt-2 " + inputCls}
-                  placeholder="Custom source..."
+                  value={incomeForm.notes}
+                  onChange={(e) => setIncomeForm((f) => ({ ...f, notes: e.target.value }))}
+                  placeholder="e.g. April 1st paycheck"
+                  className={inputCls}
                 />
-              )}
+              </div>
             </div>
-            <div className="col-span-2">
-              <label className={labelCls}>Notes (optional)</label>
-              <input
-                type="text"
-                value={incomeForm.notes}
-                onChange={(e) => setIncomeForm((f) => ({ ...f, notes: e.target.value }))}
-                placeholder="e.g. April 1st paycheck"
-                className={inputCls}
-              />
+            <div className="flex gap-2 pt-1">
+              <button type="submit" disabled={submitting} className={btn.primary}>
+                {submitting ? "Saving…" : "Save"}
+              </button>
+              <button type="button" onClick={() => setShowIncomeForm(false)} className={btn.secondary}>
+                Cancel
+              </button>
             </div>
-          </div>
-          <div className="flex gap-2 pt-1">
-            <button
-              type="submit" disabled={submitting}
-              className="rounded-lg bg-sky-600 px-4 py-2 text-sm font-medium hover:bg-sky-500 disabled:opacity-50"
-            >
-              {submitting ? "Saving..." : "Save"}
-            </button>
-            <button
-              type="button" onClick={() => setShowIncomeForm(false)}
-              className="rounded-lg bg-slate-700 px-4 py-2 text-sm font-medium hover:bg-slate-600"
-            >
-              Cancel
-            </button>
-          </div>
-        </form>
+          </form>
+        </section>
       )}
 
       {/* Income this period */}
-      <section className="rounded-xl bg-slate-800 p-4 space-y-3">
+      <section className={card + " space-y-3"}>
         <div className="flex items-center justify-between">
-          <h2 className="text-sm font-medium text-slate-400 uppercase tracking-wide">
+          <h2 className="text-xs font-semibold uppercase tracking-widest text-slate-400">
             Income This Period
           </h2>
-          <span className="text-xl font-bold">{formatCurrency(totalIncome)}</span>
+          <span className="text-xl font-bold tabular-nums">{fmt$(totalIncome)}</span>
         </div>
+
         {periodIncome.length === 0 ? (
           <p className="text-slate-500 text-sm">No income recorded yet.</p>
         ) : (
-          <ul className="divide-y divide-slate-700">
+          <ul className="space-y-1.5">
             {periodIncome.map((entry) => (
-              <li key={entry.id} className="flex items-center justify-between py-2 text-sm">
+              <li
+                key={entry.id}
+                className="group flex items-center justify-between rounded-lg border-l-2 border-emerald-500/30 bg-slate-900/60 px-3 py-2.5 transition-colors duration-150 hover:border-emerald-400/60 hover:bg-slate-900"
+              >
                 <div className="min-w-0">
-                  <span className="font-medium">{entry.source}</span>
+                  <span className="text-sm font-medium text-slate-100">{entry.source}</span>
                   {entry.notes && (
-                    <span className="text-slate-400 ml-2 text-xs truncate">{entry.notes}</span>
+                    <span className="text-slate-500 ml-2 text-xs truncate">{entry.notes}</span>
                   )}
-                  <span className="text-slate-500 ml-2 text-xs">{formatDate(entry.date)}</span>
+                  <p className="text-xs text-slate-500 mt-0.5">{fmtDate(entry.date)}</p>
                 </div>
                 <div className="flex items-center gap-3 shrink-0 ml-3">
-                  <span className="font-medium text-emerald-400">{formatCurrency(Number(entry.amount))}</span>
-                  <button
-                    onClick={() => handleDeleteIncome(entry.id)}
-                    className="text-slate-600 hover:text-red-400 text-xs transition-colors"
-                    aria-label="Remove"
-                  >
-                    ✕
-                  </button>
+                  <span className="text-sm font-semibold tabular-nums text-emerald-400">
+                    {fmt$(Number(entry.amount))}
+                  </span>
+                  <DeleteConfirm
+                    id={entry.id}
+                    confirmingId={confirmingDelete}
+                    onRequest={() => setConfirmingDelete(entry.id)}
+                    onConfirm={() => handleDeleteIncome(entry.id)}
+                    onCancel={() => setConfirmingDelete(null)}
+                    label="✕"
+                  />
                 </div>
               </li>
             ))}
@@ -548,21 +575,21 @@ export default function DashboardPage() {
       </section>
 
       {/* Bills / Savings / Discretionary */}
-      <section className="rounded-xl bg-slate-800 p-4 space-y-2">
-        <h2 className="text-sm font-medium text-slate-400 uppercase tracking-wide">
+      <section className={card + " space-y-2"}>
+        <h2 className="text-xs font-semibold uppercase tracking-widest text-slate-400">
           Bills Before Next Paycheck
         </h2>
         <p className="text-slate-500 text-sm">Add bills in the Bills tab to see this.</p>
       </section>
 
-      <div className="grid grid-cols-2 gap-4">
-        <section className="rounded-xl bg-slate-800 p-4 space-y-1">
-          <h2 className="text-xs font-medium text-slate-400 uppercase tracking-wide">Suggested Savings</h2>
-          <p className="text-2xl font-bold text-emerald-400">—</p>
+      <div className="grid grid-cols-2 gap-3">
+        <section className={card + " space-y-1"}>
+          <h2 className="text-xs font-semibold uppercase tracking-widest text-slate-400">Savings</h2>
+          <p className="text-2xl font-bold tabular-nums text-emerald-400">—</p>
         </section>
-        <section className="rounded-xl bg-slate-800 p-4 space-y-1">
-          <h2 className="text-xs font-medium text-slate-400 uppercase tracking-wide">Discretionary</h2>
-          <p className="text-2xl font-bold text-sky-400">—</p>
+        <section className={card + " space-y-1"}>
+          <h2 className="text-xs font-semibold uppercase tracking-widest text-slate-400">Left Over</h2>
+          <p className="text-2xl font-bold tabular-nums text-teal-400">—</p>
         </section>
       </div>
     </div>
