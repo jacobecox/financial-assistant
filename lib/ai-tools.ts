@@ -78,7 +78,7 @@ export async function executeTool(
       const beforeDate = toolInput.before_date as string;
       const cutoff = new Date(beforeDate);
       const bills = await sql<(BillDateInfo & { name: string })[]>`
-        SELECT name, amount, frequency, due_day, anchor_date FROM bills
+        SELECT name, amount, frequency, due_day, due_day_2, anchor_date FROM bills
         WHERE user_id = ${userId} AND active = true
       `;
 
@@ -116,7 +116,7 @@ export async function executeTool(
 
     case "get_expenses_summary": {
       const bills = await sql<(BillDateInfo & { name: string })[]>`
-        SELECT name, amount, frequency, due_day, anchor_date FROM bills
+        SELECT name, amount, frequency, due_day, due_day_2, anchor_date FROM bills
         WHERE user_id = ${userId} AND active = true AND recurring = true
       `;
       const total = bills.reduce((sum: number, b: BillDateInfo) => sum + monthlyEquivalent(b), 0);
@@ -159,7 +159,7 @@ export async function executeTool(
       const totalScheduled = schedules.reduce((sum, s) => sum + Number(s.amount), 0);
 
       const bills = await sql<BillDateInfo[]>`
-        SELECT amount, frequency, due_day, anchor_date FROM bills
+        SELECT amount, frequency, due_day, due_day_2, anchor_date FROM bills
         WHERE user_id = ${userId} AND active = true
       `;
 

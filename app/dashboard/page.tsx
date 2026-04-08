@@ -2,29 +2,16 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { monthlyEquivalent } from "@/lib/bills";
+import type { Bill, DiscretionaryItem } from "@/lib/types";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
-
-interface Bill {
-  id: string;
-  name: string;
-  amount: number;
-  recurring: boolean;
-  active: boolean;
-}
 
 interface PaySchedule {
   id: string;
   name: string;
   amount: number;
   frequency: "twice_monthly" | "monthly" | "biweekly" | "once";
-}
-
-interface IncomeEntry {
-  id: string;
-  amount: number;
-  source: string;
-  date: string;
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -39,13 +26,6 @@ function currentMonthLabel() {
   return new Date().toLocaleDateString("en-US", { month: "long", year: "numeric" });
 }
 
-function monthStart() {
-  const d = new Date();
-  d.setDate(1);
-  return d.toISOString().split("T")[0];
-}
-
-/** Estimate expected monthly income from schedules */
 function monthlyFromSchedule(s: PaySchedule): number {
   const a = Number(s.amount);
   switch (s.frequency) {
@@ -59,17 +39,9 @@ function monthlyFromSchedule(s: PaySchedule): number {
 // ─── Stat card ────────────────────────────────────────────────────────────────
 
 function StatCard({
-  label,
-  value,
-  sub,
-  accent,
-  dim,
+  label, value, sub, accent, dim,
 }: {
-  label: string;
-  value: string;
-  sub?: string;
-  accent: string; // tailwind border-l color class
-  dim?: boolean;
+  label: string; value: string; sub?: string; accent: string; dim?: boolean;
 }) {
   return (
     <div className={`${card} border-l-2 ${accent} space-y-1`}>
@@ -87,25 +59,25 @@ function StatCard({
 function BreakdownBar({
   income,
   bills,
+  discretionary,
 }: {
   income: number;
   bills: number;
+  discretionary: number;
 }) {
   const [mounted, setMounted] = useState(false);
   useEffect(() => { setMounted(true); }, []);
 
   if (income <= 0) return null;
 
-  const afterBills  = Math.max(0, income - bills);
-  const savings     = Math.floor(afterBills * 0.5);
-  const leftover    = afterBills - savings;
-  const overspent   = bills > income;
+  const savings    = Math.max(0, income - bills - discretionary);
+  const overspent  = bills + discretionary > income;
 
-  const billsPct    = Math.min(100, (bills    / income) * 100);
-  const savingsPct  = (savings  / income) * 100;
-  const leftoverPct = (leftover / income) * 100;
+  const billsPct   = Math.min(100, (bills        / income) * 100);
+  const discPct    = Math.min(100 - billsPct, (discretionary / income) * 100);
+  const savingsPct = (savings / income) * 100;
 
-  const transition = "transition-all duration-700 ease-out";
+  const t = "transition-all duration-700 ease-out";
 
   return (
     <div className={card + " space-y-4"}>
@@ -113,27 +85,14 @@ function BreakdownBar({
         Monthly Breakdown
       </h2>
 
-      {/* Bar */}
       <div className="flex h-4 overflow-hidden rounded-full bg-slate-700/60 gap-px">
-        <div
-          className={`${transition} bg-rose-500/80 rounded-l-full`}
-          style={{ width: mounted ? `${billsPct}%` : "0%" }}
-        />
+        <div className={`${t} bg-rose-500/80 rounded-l-full`}    style={{ width: mounted ? `${billsPct}%`   : "0%" }} />
+        <div className={`${t} bg-amber-500/80`}                   style={{ width: mounted ? `${discPct}%`    : "0%" }} />
         {!overspent && (
-          <>
-            <div
-              className={`${transition} bg-emerald-500`}
-              style={{ width: mounted ? `${savingsPct}%` : "0%" }}
-            />
-            <div
-              className={`${transition} bg-teal-500/70 rounded-r-full flex-1`}
-              style={{ width: mounted ? `${leftoverPct}%` : "0%" }}
-            />
-          </>
+          <div className={`${t} bg-emerald-500 rounded-r-full flex-1`} style={{ width: mounted ? `${savingsPct}%` : "0%" }} />
         )}
       </div>
 
-      {/* Legend */}
       <div className="grid grid-cols-3 gap-3">
         <div className="space-y-0.5">
           <div className="flex items-center gap-1.5">
@@ -145,6 +104,16 @@ function BreakdownBar({
         </div>
         <div className="space-y-0.5">
           <div className="flex items-center gap-1.5">
+            <span className="h-2 w-2 rounded-sm bg-amber-500/80 shrink-0" />
+            <span className="text-xs text-slate-400">Buffer</span>
+          </div>
+          <p className="text-sm font-semibold tabular-nums text-amber-400">
+            {overspent ? "—" : fmt$(discretionary)}
+          </p>
+          <p className="text-xs text-slate-500">{overspent ? "—" : `${discPct.toFixed(0)}%`}</p>
+        </div>
+        <div className="space-y-0.5">
+          <div className="flex items-center gap-1.5">
             <span className="h-2 w-2 rounded-sm bg-emerald-500 shrink-0" />
             <span className="text-xs text-slate-400">Savings</span>
           </div>
@@ -153,21 +122,11 @@ function BreakdownBar({
           </p>
           <p className="text-xs text-slate-500">{overspent ? "—" : `${savingsPct.toFixed(0)}%`}</p>
         </div>
-        <div className="space-y-0.5">
-          <div className="flex items-center gap-1.5">
-            <span className="h-2 w-2 rounded-sm bg-teal-500/70 shrink-0" />
-            <span className="text-xs text-slate-400">Left Over</span>
-          </div>
-          <p className="text-sm font-semibold tabular-nums text-teal-400">
-            {overspent ? "—" : fmt$(leftover)}
-          </p>
-          <p className="text-xs text-slate-500">{overspent ? "—" : `${leftoverPct.toFixed(0)}%`}</p>
-        </div>
       </div>
 
       {overspent && (
         <p className="text-xs text-rose-400/80">
-          Bills exceed recorded income this month. Add income or review your bills.
+          Bills and buffer exceed income this month. Review your bills or discretionary items.
         </p>
       )}
     </div>
@@ -177,40 +136,45 @@ function BreakdownBar({
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function OverviewPage() {
-  const [bills, setBills]         = useState<Bill[]>([]);
-  const [schedules, setSchedules] = useState<PaySchedule[]>([]);
-  const [entries, setEntries]     = useState<IncomeEntry[]>([]);
-  const [loading, setLoading]     = useState(true);
+  const [bills, setBills]               = useState<Bill[]>([]);
+  const [schedules, setSchedules]       = useState<PaySchedule[]>([]);
+  const [discretionary, setDiscretionary] = useState<DiscretionaryItem[]>([]);
+  const [loading, setLoading]           = useState(true);
 
   useEffect(() => {
     Promise.all([
       fetch("/api/bills").then((r) => r.json()),
       fetch("/api/pay-schedule").then((r) => r.json()),
-      fetch(`/api/income?since=${monthStart()}`).then((r) => r.json()),
-    ]).then(([b, s, i]) => {
+      fetch("/api/discretionary").then((r) => r.json()),
+    ]).then(([b, s, d]) => {
       setBills(Array.isArray(b) ? b : []);
       setSchedules(Array.isArray(s) ? s : []);
-      setEntries(Array.isArray(i) ? i : []);
+      setDiscretionary(Array.isArray(d) ? d : []);
       setLoading(false);
     });
   }, []);
 
   const totalBills = bills
     .filter((b) => b.recurring && b.active)
-    .reduce((sum, b) => sum + Number(b.amount), 0);
+    .reduce((sum, b) => sum + monthlyEquivalent({
+      frequency: b.frequency,
+      due_day: b.due_day,
+      due_day_2: b.due_day_2,
+      anchor_date: b.anchor_date,
+      amount: b.amount,
+    }), 0);
 
-  const recordedIncome = entries.reduce((sum, e) => sum + Number(e.amount), 0);
+  const totalDiscretionary = discretionary.reduce((sum, d) => sum + monthlyEquivalent({
+    frequency: d.frequency,
+    due_day: null,
+    due_day_2: null,
+    anchor_date: null,
+    amount: d.amount,
+  }), 0);
 
-  const expectedMonthly = schedules.reduce(
-    (sum, s) => sum + monthlyFromSchedule(s),
-    0
-  );
-
-  // Use recorded income when available; fall back to expected for estimates
-  const incomeForCalc  = recordedIncome > 0 ? recordedIncome : expectedMonthly;
-  const estSavings     = Math.max(0, incomeForCalc - totalBills);
-  const hasSchedules   = schedules.length > 0;
-  const incomeIsActual = recordedIncome > 0;
+  const expectedMonthly = schedules.reduce((sum, s) => sum + monthlyFromSchedule(s), 0);
+  const estSavings      = Math.max(0, expectedMonthly - totalBills - totalDiscretionary);
+  const hasSchedules    = schedules.length > 0;
 
   if (loading) {
     return (
@@ -224,94 +188,55 @@ export default function OverviewPage() {
 
   return (
     <div className="space-y-4">
-      {/* Header */}
       <div>
         <h1 className="text-xl font-semibold tracking-tight">Overview</h1>
         <p className="text-xs text-slate-400 mt-0.5">{currentMonthLabel()}</p>
       </div>
 
-      {/* Stat cards */}
       <div className="grid grid-cols-1 gap-3">
         <StatCard
-          label="Total Income"
-          value={incomeIsActual ? fmt$(recordedIncome) : "—"}
+          label="Expected Monthly Income"
+          value={hasSchedules ? fmt$(expectedMonthly) : "—"}
           sub={
-            incomeIsActual
-              ? `${entries.length} ${entries.length === 1 ? "entry" : "entries"} this month`
-              : hasSchedules
-              ? `Expected ${fmt$(expectedMonthly)} from ${schedules.length} schedule${schedules.length !== 1 ? "s" : ""}`
-              : "No income recorded or scheduled"
+            hasSchedules
+              ? `From ${schedules.length} schedule${schedules.length !== 1 ? "s" : ""}`
+              : "No pay schedule set up"
           }
           accent="border-emerald-500/50"
-          dim={!incomeIsActual}
+          dim={!hasSchedules}
         />
         <StatCard
           label="Monthly Bills"
           value={totalBills > 0 ? fmt$(totalBills) : "—"}
           sub={
             totalBills > 0
-              ? `${bills.filter((b) => b.recurring && b.active).length} recurring bills`
+              ? `${bills.filter((b) => b.recurring && b.active).length} recurring bills · normalized to /mo`
               : "No bills added yet"
           }
           accent="border-rose-500/50"
         />
         <StatCard
           label="Est. Savings"
-          value={incomeForCalc > 0 ? fmt$(estSavings) : "—"}
+          value={expectedMonthly > 0 ? fmt$(estSavings) : "—"}
           sub={
-            incomeForCalc > 0
-              ? incomeIsActual
-                ? "After bills · 50% of remainder"
-                : "Based on scheduled income"
-              : "Add income or a pay schedule"
+            expectedMonthly > 0
+              ? "After bills & discretionary buffer"
+              : "Add a pay schedule to see this"
           }
           accent="border-teal-500/50"
-          dim={!incomeIsActual}
+          dim={!hasSchedules}
         />
       </div>
 
-      {/* Breakdown bar */}
-      <BreakdownBar income={incomeForCalc} bills={totalBills} />
+      <BreakdownBar
+        income={expectedMonthly}
+        bills={totalBills}
+        discretionary={totalDiscretionary}
+      />
 
-      {/* Recent income */}
-      {entries.length > 0 && (
-        <section className={card + " space-y-3"}>
-          <div className="flex items-center justify-between">
-            <h2 className="text-xs font-semibold uppercase tracking-widest text-slate-400">
-              Recent Income
-            </h2>
-            <Link
-              href="/dashboard/paycheck"
-              className="text-xs font-medium text-emerald-400 transition-colors hover:text-emerald-300"
-            >
-              View all →
-            </Link>
-          </div>
-          <ul className="space-y-1.5">
-            {entries.slice(0, 4).map((e) => (
-              <li
-                key={e.id}
-                className="flex items-center justify-between rounded-lg border-l-2 border-emerald-500/30 bg-slate-900/60 px-3 py-2 text-sm"
-              >
-                <div>
-                  <span className="font-medium text-slate-100">{e.source}</span>
-                  <span className="ml-2 text-xs text-slate-500">
-                    {new Date(e.date + "T00:00:00").toLocaleDateString("en-US", {
-                      month: "short", day: "numeric",
-                    })}
-                  </span>
-                </div>
-                <span className="font-semibold tabular-nums text-emerald-400">{fmt$(Number(e.amount))}</span>
-              </li>
-            ))}
-          </ul>
-        </section>
-      )}
-
-      {/* Empty state nudges */}
       {!hasSchedules && (
         <p className="text-center text-sm text-slate-500">
-          <Link href="/dashboard/paycheck" className="text-emerald-400 hover:text-emerald-300 transition-colors">
+          <Link href="/dashboard/income" className="text-emerald-400 hover:text-emerald-300 transition-colors">
             Set up a pay schedule
           </Link>
           {" "}to see your monthly picture.

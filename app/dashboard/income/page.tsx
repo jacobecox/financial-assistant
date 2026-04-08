@@ -3,7 +3,10 @@
 import { useEffect, useState } from "react";
 import { CurrencyInput } from "@/components/CurrencyInput";
 import { DateInput } from "@/components/DateInput";
-import type { Income, Frequency } from "@/lib/types";
+import type { Bill, DiscretionaryItem, Frequency } from "@/lib/types";
+import { computeNextDueDate } from "@/lib/bills";
+
+// CurrencyInput and DateInput are used by ScheduleForm below
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -356,95 +359,57 @@ function PayScheduleSection({
 
 // ─── Main page ────────────────────────────────────────────────────────────────
 
-const INCOME_SOURCES = ["Paycheck", "Side Hustle", "Sold Item", "Freelance", "Gift", "Other"];
-
 export default function DashboardPage() {
   const [schedules, setSchedules] = useState<PayScheduleResponse[] | undefined>(undefined);
-  const [income, setIncome] = useState<Income[]>([]);
-  const [showIncomeForm, setShowIncomeForm] = useState(false);
-  const [submitting, setSubmitting] = useState(false);
-  const [confirmingDelete, setConfirmingDelete] = useState<string | null>(null);
-  const [incomeForm, setIncomeForm] = useState({
-    amount: "0.00",
-    source: "Paycheck",
-    date: today,
-    notes: "",
-  });
+  const [bills, setBills] = useState<Bill[]>([]);
+  const [discretionary, setDiscretionary] = useState<DiscretionaryItem[]>([]);
+
+  useEffect(() => {
+    fetch("/api/pay-schedule").then((r) => r.json()).then(setSchedules);
+    fetch("/api/bills").then((r) => r.json()).then(setBills);
+    fetch("/api/discretionary").then((r) => r.json()).then(setDiscretionary);
+  }, []);
 
   const periodStart = schedules?.length
     ? [...schedules].map((s) => s.current_pay_date).sort()[0]
     : undefined;
 
-  useEffect(() => {
-    fetch("/api/pay-schedule").then((r) => r.json()).then(setSchedules);
-    fetchIncome();
-  }, []);
-
-  function fetchIncome(since?: string) {
-    const url = since ? `/api/income?since=${since}` : "/api/income";
-    fetch(url).then((r) => r.json()).then(setIncome);
-  }
-
-  async function handleAddIncome(e: React.SyntheticEvent<HTMLFormElement>) {
-    e.preventDefault();
-    if (parseFloat(incomeForm.amount) <= 0) return;
-    setSubmitting(true);
-    try {
-      const res = await fetch("/api/income", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          amount: parseFloat(incomeForm.amount),
-          source: incomeForm.source,
-          date: incomeForm.date,
-          notes: incomeForm.notes || undefined,
-        }),
-      });
-      if (res.ok) {
-        setShowIncomeForm(false);
-        setIncomeForm({ amount: "0.00", source: "Paycheck", date: today, notes: "" });
-        fetchIncome(periodStart);
-      }
-    } finally {
-      setSubmitting(false);
-    }
-  }
-
-  async function handleDeleteIncome(id: string) {
-    await fetch(`/api/income/${id}`, { method: "DELETE" });
-    setIncome((prev) => prev.filter((e) => e.id !== id));
-    setConfirmingDelete(null);
-  }
-
-  const periodIncome = periodStart
-    ? income.filter((e) => e.date >= periodStart)
-    : income;
-  const totalIncome = periodIncome.reduce((sum, e) => sum + Number(e.amount), 0);
-
   const latestNextPayDate = schedules?.length
     ? [...schedules].map((s) => s.next_pay_date).filter(Boolean).sort().at(-1)
     : undefined;
 
+  const totalScheduled = schedules?.reduce((sum, s) => sum + Number(s.amount), 0) ?? 0;
+
+  const dueBills = latestNextPayDate
+    ? bills.filter((b) => {
+        const next = computeNextDueDate({
+          frequency: b.frequency,
+          due_day: b.due_day,
+          due_day_2: b.due_day_2,
+          anchor_date: b.anchor_date,
+          amount: b.amount,
+        });
+        return next !== null && next <= latestNextPayDate;
+      })
+    : [];
+
+  const totalBills = dueBills.reduce((sum, b) => sum + Number(b.amount), 0);
+  const totalDiscretionary = discretionary.reduce((sum, d) => sum + Number(d.amount), 0);
+  const suggestedSavings = Math.max(0, totalScheduled - totalBills - totalDiscretionary);
+  const leftOver = totalDiscretionary;
+
   return (
     <div className="space-y-4">
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-xl font-semibold tracking-tight">Paycheck Overview</h1>
-          {periodStart ? (
-            <p className="text-xs text-slate-400 mt-0.5 tabular-nums">
-              {fmtDate(periodStart)}{latestNextPayDate && <> → {fmtDate(latestNextPayDate)}</>}
-            </p>
-          ) : (
-            <p className="text-xs text-slate-500 mt-0.5">No pay schedule set up yet</p>
-          )}
-        </div>
-        <button
-          onClick={() => { setShowIncomeForm((v) => !v); setConfirmingDelete(null); }}
-          className={btn.primarySm}
-        >
-          + Add Income
-        </button>
+      <div>
+        <h1 className="text-xl font-semibold tracking-tight">Income</h1>
+        {periodStart ? (
+          <p className="text-xs text-slate-400 mt-0.5 tabular-nums">
+            {fmtDate(periodStart)}{latestNextPayDate && <> → {fmtDate(latestNextPayDate)}</>}
+          </p>
+        ) : (
+          <p className="text-xs text-slate-500 mt-0.5">No pay schedule set up yet</p>
+        )}
       </div>
 
       {/* Pay schedules */}
@@ -457,139 +422,80 @@ export default function DashboardPage() {
         />
       )}
 
-      {/* Add income form */}
-      {showIncomeForm && (
-        <section className={card + " space-y-3 border border-emerald-500/10"}>
-          <h2 className="text-sm font-semibold text-slate-200">New Income Entry</h2>
-          <form onSubmit={handleAddIncome} className="space-y-3">
-            <div className="grid grid-cols-2 gap-3">
-              <div className="col-span-2 sm:col-span-1">
-                <label className={labelCls}>Amount</label>
-                <CurrencyInput
-                  value={incomeForm.amount}
-                  onChange={(v) => setIncomeForm((f) => ({ ...f, amount: v }))}
-                  className={inputCls}
-                />
-              </div>
-              <div className="col-span-2 sm:col-span-1">
-                <label className={labelCls}>Date</label>
-                <DateInput
-                  value={incomeForm.date}
-                  onChange={(v) => setIncomeForm((f) => ({ ...f, date: v }))}
-                  required
-                  className={inputCls}
-                />
-              </div>
-              <div className="col-span-2">
-                <label className={labelCls}>Source</label>
-                <div className="flex flex-wrap gap-2">
-                  {INCOME_SOURCES.map((s) => (
-                    <button
-                      key={s} type="button"
-                      onClick={() => setIncomeForm((f) => ({ ...f, source: s }))}
-                      className={`rounded-full px-3 py-1 text-xs font-medium transition-all duration-150 active:scale-95 ${
-                        incomeForm.source === s
-                          ? "bg-emerald-600 text-white shadow-md shadow-emerald-500/20"
-                          : "bg-slate-700 text-slate-300 hover:bg-slate-600 hover:text-white"
-                      }`}
-                    >
-                      {s}
-                    </button>
-                  ))}
-                </div>
-                {!INCOME_SOURCES.includes(incomeForm.source) && (
-                  <input
-                    type="text"
-                    value={incomeForm.source}
-                    onChange={(e) => setIncomeForm((f) => ({ ...f, source: e.target.value }))}
-                    className={"mt-2 " + inputCls}
-                    placeholder="Custom source…"
-                  />
-                )}
-              </div>
-              <div className="col-span-2">
-                <label className={labelCls}>Notes (optional)</label>
-                <input
-                  type="text"
-                  value={incomeForm.notes}
-                  onChange={(e) => setIncomeForm((f) => ({ ...f, notes: e.target.value }))}
-                  placeholder="e.g. April 1st paycheck"
-                  className={inputCls}
-                />
-              </div>
-            </div>
-            <div className="flex gap-2 pt-1">
-              <button type="submit" disabled={submitting} className={btn.primary}>
-                {submitting ? "Saving…" : "Save"}
-              </button>
-              <button type="button" onClick={() => setShowIncomeForm(false)} className={btn.secondary}>
-                Cancel
-              </button>
-            </div>
-          </form>
-        </section>
-      )}
-
-      {/* Income this period */}
+      {/* Bills before next paycheck */}
       <section className={card + " space-y-3"}>
-        <div className="flex items-center justify-between">
-          <h2 className="text-xs font-semibold uppercase tracking-widest text-slate-400">
-            Income This Period
-          </h2>
-          <span className="text-xl font-bold tabular-nums">{fmt$(totalIncome)}</span>
-        </div>
-
-        {periodIncome.length === 0 ? (
-          <p className="text-slate-500 text-sm">No income recorded yet.</p>
-        ) : (
-          <ul className="space-y-1.5">
-            {periodIncome.map((entry) => (
-              <li
-                key={entry.id}
-                className="group flex items-center justify-between rounded-lg border-l-2 border-emerald-500/30 bg-slate-900/60 px-3 py-2.5 transition-colors duration-150 hover:border-emerald-400/60 hover:bg-slate-900"
-              >
-                <div className="min-w-0">
-                  <span className="text-sm font-medium text-slate-100">{entry.source}</span>
-                  {entry.notes && (
-                    <span className="text-slate-500 ml-2 text-xs truncate">{entry.notes}</span>
-                  )}
-                  <p className="text-xs text-slate-500 mt-0.5">{fmtDate(entry.date)}</p>
-                </div>
-                <div className="flex items-center gap-3 shrink-0 ml-3">
-                  <span className="text-sm font-semibold tabular-nums text-emerald-400">
-                    {fmt$(Number(entry.amount))}
-                  </span>
-                  <DeleteConfirm
-                    id={entry.id}
-                    confirmingId={confirmingDelete}
-                    onRequest={() => setConfirmingDelete(entry.id)}
-                    onConfirm={() => handleDeleteIncome(entry.id)}
-                    onCancel={() => setConfirmingDelete(null)}
-                    label="✕"
-                  />
-                </div>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
-
-      {/* Bills / Savings / Discretionary */}
-      <section className={card + " space-y-2"}>
         <h2 className="text-xs font-semibold uppercase tracking-widest text-slate-400">
           Bills Before Next Paycheck
         </h2>
-        <p className="text-slate-500 text-sm">Add bills in the Bills tab to see this.</p>
+
+        {!latestNextPayDate ? (
+          <p className="text-slate-500 text-sm">Set up a pay schedule to see this.</p>
+        ) : dueBills.length === 0 ? (
+          <p className="text-slate-500 text-sm">No bills due before {fmtDate(latestNextPayDate)}.</p>
+        ) : (
+          <>
+            <ul className="space-y-1">
+              {dueBills.map((b) => {
+                const next = computeNextDueDate({ frequency: b.frequency, due_day: b.due_day, due_day_2: b.due_day_2, anchor_date: b.anchor_date, amount: b.amount })!;
+                return (
+                  <li key={b.id} className="flex items-center justify-between py-1.5 border-b border-slate-700/50 last:border-0">
+                    <div>
+                      <span className="text-sm text-slate-100">{b.name}</span>
+                      <span className="text-xs text-slate-500 ml-2">due {fmtDate(next)}</span>
+                    </div>
+                    <span className="tabular-nums text-sm text-slate-200">{fmt$(b.amount)}</span>
+                  </li>
+                );
+              })}
+            </ul>
+            <div className="flex items-center justify-between pt-1 border-t border-slate-700">
+              <span className="text-xs font-medium text-slate-400">Total</span>
+              <span className="tabular-nums text-sm font-semibold text-slate-100">{fmt$(totalBills)}</span>
+            </div>
+          </>
+        )}
       </section>
 
+      {/* Discretionary reserves */}
+      {discretionary.length > 0 && (
+        <section className={card + " space-y-3"}>
+          <h2 className="text-xs font-semibold uppercase tracking-widest text-slate-400">
+            Discretionary Reserves
+          </h2>
+          <ul className="space-y-1">
+            {discretionary.map((d) => (
+              <li key={d.id} className="flex items-center justify-between py-1.5 border-b border-slate-700/50 last:border-0">
+                <span className="text-sm text-slate-100">{d.name}</span>
+                <span className="tabular-nums text-sm text-slate-200">{fmt$(d.amount)}</span>
+              </li>
+            ))}
+          </ul>
+          <div className="flex items-center justify-between pt-1 border-t border-slate-700">
+            <span className="text-xs font-medium text-slate-400">Total reserved</span>
+            <span className="tabular-nums text-sm font-semibold text-slate-100">{fmt$(totalDiscretionary)}</span>
+          </div>
+        </section>
+      )}
+
+      {/* Savings / Left Over */}
       <div className="grid grid-cols-2 gap-3">
         <section className={card + " space-y-1"}>
-          <h2 className="text-xs font-semibold uppercase tracking-widest text-slate-400">Savings</h2>
-          <p className="text-2xl font-bold tabular-nums text-emerald-400">—</p>
+          <h2 className="text-xs font-semibold uppercase tracking-widest text-slate-400">Suggested Savings</h2>
+          <p className="text-2xl font-bold tabular-nums text-emerald-400">
+            {totalScheduled > 0 ? fmt$(suggestedSavings) : "—"}
+          </p>
+          {totalScheduled > 0 && (
+            <p className="text-xs text-slate-600">After bills & discretionary buffer</p>
+          )}
         </section>
         <section className={card + " space-y-1"}>
-          <h2 className="text-xs font-semibold uppercase tracking-widest text-slate-400">Left Over</h2>
-          <p className="text-2xl font-bold tabular-nums text-teal-400">—</p>
+          <h2 className="text-xs font-semibold uppercase tracking-widest text-slate-400">Buffer</h2>
+          <p className="text-2xl font-bold tabular-nums text-teal-400">
+            {totalScheduled > 0 ? fmt$(leftOver) : "—"}
+          </p>
+          {totalScheduled > 0 && (
+            <p className="text-xs text-slate-600">Your discretionary reserves</p>
+          )}
         </section>
       </div>
     </div>

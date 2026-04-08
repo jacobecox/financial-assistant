@@ -3,9 +3,10 @@
 import { useEffect, useRef, useState } from "react";
 import { CurrencyInput } from "@/components/CurrencyInput";
 import { DateInput } from "@/components/DateInput";
-import type { Bill, BillInput } from "@/lib/types";
+import type { Bill, BillInput, DiscretionaryItem, DiscretionaryFrequency } from "@/lib/types";
+// DiscretionaryItem + DiscretionaryFrequency are used by DiscretionarySection below
 import type { BillFrequency } from "@/lib/bills";
-import { frequencyLabel, computeNextDueDate, monthlyEquivalent } from "@/lib/bills";
+import { frequencyLabel, computeNextDueDate } from "@/lib/bills";
 
 // ── Design tokens ─────────────────────────────────────────────────────────────
 
@@ -34,6 +35,7 @@ const labelCls = "block text-xs font-medium text-slate-400 mb-1.5";
 const FREQUENCIES: BillFrequency[] = [
   "weekly",
   "biweekly",
+  "semi_monthly",
   "monthly",
   "quarterly",
   "semi_annual",
@@ -41,7 +43,7 @@ const FREQUENCIES: BillFrequency[] = [
 ];
 
 function needsAnchorDate(freq: BillFrequency) {
-  return freq !== "monthly";
+  return freq !== "monthly" && freq !== "semi_monthly";
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -50,6 +52,7 @@ function formatDueDate(bill: Bill): string {
   const next = computeNextDueDate({
     frequency: bill.frequency,
     due_day: bill.due_day,
+    due_day_2: bill.due_day_2,
     anchor_date: bill.anchor_date,
     amount: bill.amount,
   });
@@ -120,18 +123,27 @@ interface BillFormProps {
   onCancel: () => void;
 }
 
+function dayFromPicker(picker: string): number | undefined {
+  return picker ? new Date(picker + "T00:00:00").getDate() : undefined;
+}
+
+function pickerFromDay(day: number | null | undefined): string {
+  return day ? `2025-01-${String(day).padStart(2, "0")}` : "";
+}
+
 function BillForm({ initial, onSave, onCancel }: BillFormProps) {
   const [name, setName] = useState(initial?.name ?? "");
   const [amount, setAmount] = useState(initial ? Number(initial.amount).toFixed(2) : "0.00");
   const [category, setCategory] = useState(initial?.category ?? "");
   const [frequency, setFrequency] = useState<BillFrequency>(initial?.frequency ?? "monthly");
-  // For monthly: store as a full date string so we can use DateInput, extract the day on save
-  const [dueDatePicker, setDueDatePicker] = useState<string>(
-    initial?.due_day ? `2025-01-${String(initial.due_day).padStart(2, "0")}` : ""
-  );
+  // For monthly/semi_monthly: store as date strings so we can use DateInput, extract day on save
+  const [dueDatePicker, setDueDatePicker] = useState<string>(pickerFromDay(initial?.due_day));
+  const [dueDatePicker2, setDueDatePicker2] = useState<string>(pickerFromDay(initial?.due_day_2));
   const [anchorDate, setAnchorDate] = useState(initial?.anchor_date ?? "");
   const [recurring, setRecurring] = useState(initial?.recurring ?? true);
   const [saving, setSaving] = useState(false);
+
+  const usesDueDays = frequency === "monthly" || frequency === "semi_monthly";
 
   async function handleSubmit(e: React.SyntheticEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -142,9 +154,8 @@ function BillForm({ initial, onSave, onCancel }: BillFormProps) {
         amount: parseFloat(amount),
         category: category.trim() || undefined,
         frequency,
-        due_day: frequency === "monthly" && dueDatePicker
-          ? new Date(dueDatePicker + "T00:00:00").getDate()
-          : undefined,
+        due_day: usesDueDays ? dayFromPicker(dueDatePicker) : undefined,
+        due_day_2: frequency === "semi_monthly" ? dayFromPicker(dueDatePicker2) : undefined,
         anchor_date: needsAnchorDate(frequency) && anchorDate ? anchorDate : undefined,
         recurring,
       });
@@ -173,7 +184,7 @@ function BillForm({ initial, onSave, onCancel }: BillFormProps) {
 
         {/* Amount */}
         <div className="col-span-2 sm:col-span-1">
-          <label className={labelCls}>Amount</label>
+          <label className={labelCls}>Amount <span className="text-slate-600">(per occurrence)</span></label>
           <CurrencyInput value={amount} onChange={setAmount} className={inputCls + " tabular-nums"} />
         </div>
 
@@ -205,19 +216,27 @@ function BillForm({ initial, onSave, onCancel }: BillFormProps) {
           </select>
         </div>
 
-        {/* Due day — monthly only */}
-        {frequency === "monthly" && (
+        {/* Due day(s) — monthly and semi_monthly */}
+        {usesDueDays && (
           <div className="col-span-2 sm:col-span-1">
-            <label className={labelCls}>Due date (pick any month)</label>
-            <DateInput
-              value={dueDatePicker}
-              onChange={setDueDatePicker}
-              className={inputCls + " cursor-pointer"}
-            />
+            <label className={labelCls}>
+              {frequency === "semi_monthly" ? "First due date" : "Due date"}{" "}
+              <span className="text-slate-600">(pick any month)</span>
+            </label>
+            <DateInput value={dueDatePicker} onChange={setDueDatePicker} className={inputCls + " cursor-pointer"} />
           </div>
         )}
 
-        {/* Anchor date — non-monthly */}
+        {frequency === "semi_monthly" && (
+          <div className="col-span-2 sm:col-span-1">
+            <label className={labelCls}>
+              Second due date <span className="text-slate-600">(pick any month)</span>
+            </label>
+            <DateInput value={dueDatePicker2} onChange={setDueDatePicker2} className={inputCls + " cursor-pointer"} />
+          </div>
+        )}
+
+        {/* Anchor date — non-monthly/semi_monthly */}
         {needsAnchorDate(frequency) && (
           <div className="col-span-2 sm:col-span-1">
             <label className={labelCls}>A known due date</label>
@@ -245,6 +264,165 @@ function BillForm({ initial, onSave, onCancel }: BillFormProps) {
         <button type="button" onClick={onCancel} className={btn.secondary}>
           Cancel
         </button>
+      </div>
+    </form>
+  );
+}
+
+// ── Discretionary section ─────────────────────────────────────────────────────
+
+function DiscretionarySection() {
+  const [items, setItems] = useState<DiscretionaryItem[]>([]);
+  const [showForm, setShowForm] = useState(false);
+  const [editing, setEditing] = useState<DiscretionaryItem | null>(null);
+  const [confirmingId, setConfirmingId] = useState<string | null>(null);
+
+  async function load() {
+    const res = await fetch("/api/discretionary");
+    if (res.ok) setItems(await res.json());
+  }
+
+  useEffect(() => { load(); }, []);
+
+  async function handleSave(name: string, amount: number, frequency: DiscretionaryFrequency, id?: string) {
+    const url = id ? `/api/discretionary/${id}` : "/api/discretionary";
+    const method = id ? "PUT" : "POST";
+    const res = await fetch(url, {
+      method,
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name, amount, frequency }),
+    });
+    if (res.ok) { setShowForm(false); setEditing(null); await load(); }
+  }
+
+  async function handleDelete(id: string) {
+    await fetch(`/api/discretionary/${id}`, { method: "DELETE" });
+    setConfirmingId(null);
+    await load();
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-base font-semibold">Discretionary</h2>
+          <p className="text-xs text-slate-500 mt-0.5">Reserved amounts kept as a buffer each paycheck</p>
+        </div>
+        {!showForm && !editing && (
+          <button onClick={() => setShowForm(true)} className={btn.primarySm}>
+            + Add
+          </button>
+        )}
+      </div>
+
+      {(showForm || editing) && (
+        <DiscretionaryForm
+          initial={editing ?? undefined}
+          onSave={(name, amount, frequency) => handleSave(name, amount, frequency, editing?.id)}
+          onCancel={() => { setShowForm(false); setEditing(null); }}
+        />
+      )}
+
+      {items.length === 0 && !showForm ? (
+        <p className="text-slate-500 text-sm">No discretionary items yet.</p>
+      ) : (
+        <div className={card}>
+          {items.map((item) => (
+            <div key={item.id} className="flex items-center justify-between py-3 border-b border-slate-700/50 last:border-0">
+              <div>
+                <p className="text-sm font-medium text-slate-100">{item.name}</p>
+                <p className="text-xs text-slate-500 mt-0.5">{DISC_FREQUENCIES.find((f) => f.value === item.frequency)?.label ?? "Monthly"}</p>
+              </div>
+              <div className="flex items-center gap-3 ml-4 shrink-0">
+                <span className="tabular-nums text-sm font-semibold text-slate-200">
+                  {fmt$(item.amount)}
+                </span>
+                <button
+                  onClick={() => { setEditing(item); setShowForm(false); setConfirmingId(null); }}
+                  className="text-xs font-medium text-slate-400 transition-colors duration-150 hover:text-slate-200"
+                >
+                  Edit
+                </button>
+                <DeleteConfirm
+                  id={item.id}
+                  confirmingId={confirmingId}
+                  onRequest={() => setConfirmingId(item.id)}
+                  onConfirm={() => handleDelete(item.id)}
+                  onCancel={() => setConfirmingId(null)}
+                />
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+const DISC_FREQUENCIES: { value: DiscretionaryFrequency; label: string }[] = [
+  { value: "monthly",      label: "Monthly" },
+  { value: "semi_monthly", label: "Twice a month" },
+  { value: "biweekly",     label: "Every 2 weeks" },
+  { value: "weekly",       label: "Weekly" },
+];
+
+function DiscretionaryForm({
+  initial,
+  onSave,
+  onCancel,
+}: {
+  initial?: DiscretionaryItem;
+  onSave: (name: string, amount: number, frequency: DiscretionaryFrequency) => Promise<void>;
+  onCancel: () => void;
+}) {
+  const [name, setName] = useState(initial?.name ?? "");
+  const [amount, setAmount] = useState(initial ? Number(initial.amount).toFixed(2) : "0.00");
+  const [frequency, setFrequency] = useState<DiscretionaryFrequency>(initial?.frequency ?? "monthly");
+  const [saving, setSaving] = useState(false);
+
+  async function handleSubmit(e: React.SyntheticEvent<HTMLFormElement>) {
+    e.preventDefault();
+    setSaving(true);
+    try { await onSave(name.trim(), parseFloat(amount), frequency); }
+    finally { setSaving(false); }
+  }
+
+  return (
+    <form onSubmit={handleSubmit} className={card + " space-y-3 border border-emerald-500/10"}>
+      <div className="grid grid-cols-2 gap-3">
+        <div className="col-span-2 sm:col-span-1">
+          <label className={labelCls}>Label</label>
+          <input
+            type="text"
+            required
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="e.g. Spending buffer"
+            className={inputCls}
+          />
+        </div>
+        <div className="col-span-2 sm:col-span-1">
+          <label className={labelCls}>Amount <span className="text-slate-600">(per occurrence)</span></label>
+          <CurrencyInput value={amount} onChange={setAmount} className={inputCls + " tabular-nums"} />
+        </div>
+        <div className="col-span-2 sm:col-span-1">
+          <label className={labelCls}>Frequency</label>
+          <select
+            value={frequency}
+            onChange={(e) => setFrequency(e.target.value as DiscretionaryFrequency)}
+            className={inputCls}
+          >
+            {DISC_FREQUENCIES.map((f) => (
+              <option key={f.value} value={f.value}>{f.label}</option>
+            ))}
+          </select>
+        </div>
+      </div>
+      <div className="flex gap-2 pt-1">
+        <button type="submit" disabled={saving} className={btn.primary}>
+          {saving ? "Saving…" : initial ? "Save Changes" : "Add"}
+        </button>
+        <button type="button" onClick={onCancel} className={btn.secondary}>Cancel</button>
       </div>
     </form>
   );
@@ -392,16 +570,14 @@ export default function BillsPage() {
                   onDeleteCancel={() => setConfirmingId(null)}
                 />
               ))}
-              <p className="text-xs text-slate-600 text-right mt-2 tabular-nums">
-                {grouped[cat]
-                  .reduce((sum, b) => sum + monthlyEquivalent({ frequency: b.frequency, due_day: b.due_day, anchor_date: b.anchor_date, amount: b.amount }), 0)
-                  .toLocaleString("en-US", { style: "currency", currency: "USD" })}
-                {" / mo"}
-              </p>
             </div>
           ))}
         </div>
       )}
+
+      <hr className="border-slate-700/50" />
+
+      <DiscretionarySection />
     </div>
   );
 }

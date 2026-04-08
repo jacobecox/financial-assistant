@@ -28,6 +28,7 @@ export interface Bill {
   category: string | null;
   frequency: BillFrequency;
   due_day: number | null;
+  due_day_2: number | null;
   anchor_date: string | null;
   recurring: boolean;
   active: boolean;
@@ -40,6 +41,7 @@ export interface BillInput {
   category?: string;
   frequency: BillFrequency;
   due_day?: number;
+  due_day_2?: number;
   anchor_date?: string;
   recurring?: boolean;
 }
@@ -66,6 +68,18 @@ export interface UpcomingBillsResult {
     frequency: BillFrequency;
   }>;
   total: number;
+}
+
+export type DiscretionaryFrequency = "weekly" | "biweekly" | "semi_monthly" | "monthly";
+
+export interface DiscretionaryItem {
+  id: string;
+  user_id: string;
+  name: string;
+  amount: number;
+  frequency: DiscretionaryFrequency;
+  active: boolean;
+  created_at: string;
 }
 
 export interface SavingsSuggestionResult {

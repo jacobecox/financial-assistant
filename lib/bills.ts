@@ -1,6 +1,7 @@
 export type BillFrequency =
   | "weekly"
   | "biweekly"
+  | "semi_monthly"
   | "monthly"
   | "quarterly"
   | "semi_annual"
@@ -8,20 +9,22 @@ export type BillFrequency =
 
 export interface BillDateInfo {
   frequency: BillFrequency;
-  due_day: number | null;    // day of month — used by monthly
-  anchor_date: string | null; // known past due date — used by all non-monthly
+  due_day: number | null;    // day of month — used by monthly and semi_monthly (first day)
+  due_day_2: number | null;  // second day of month — used by semi_monthly only
+  anchor_date: string | null; // known past due date — used by all non-monthly/semi_monthly
   amount: number;
 }
 
 /** Human-readable label for a frequency */
 export function frequencyLabel(f: BillFrequency): string {
   switch (f) {
-    case "weekly":      return "Weekly";
-    case "biweekly":    return "Every 2 weeks";
-    case "monthly":     return "Monthly";
-    case "quarterly":   return "Quarterly";
-    case "semi_annual": return "Twice a year";
-    case "annual":      return "Annually";
+    case "weekly":       return "Weekly";
+    case "biweekly":     return "Every 2 weeks";
+    case "semi_monthly": return "Twice a month";
+    case "monthly":      return "Monthly";
+    case "quarterly":    return "Quarterly";
+    case "semi_annual":  return "Twice a year";
+    case "annual":       return "Annually";
   }
 }
 
@@ -32,12 +35,13 @@ export function frequencyLabel(f: BillFrequency): string {
 export function monthlyEquivalent(bill: BillDateInfo): number {
   const a = Number(bill.amount);
   switch (bill.frequency) {
-    case "weekly":      return (a * 52) / 12;
-    case "biweekly":    return (a * 26) / 12;
-    case "monthly":     return a;
-    case "quarterly":   return a / 3;
-    case "semi_annual": return a / 6;
-    case "annual":      return a / 12;
+    case "weekly":       return (a * 52) / 12;
+    case "biweekly":     return (a * 26) / 12;
+    case "semi_monthly": return a * 2;
+    case "monthly":      return a;
+    case "quarterly":    return a / 3;
+    case "semi_annual":  return a / 6;
+    case "annual":       return a / 12;
   }
 }
 
@@ -49,7 +53,23 @@ export function computeNextDueDate(
   bill: BillDateInfo,
   today: Date = new Date()
 ): string | null {
-  const { frequency, due_day, anchor_date } = bill;
+  const { frequency, due_day, due_day_2, anchor_date } = bill;
+
+  // ── Semi-monthly: two fixed days per month ────────────────────────────────
+  if (frequency === "semi_monthly") {
+    if (!due_day) return null;
+    const second = due_day_2 ?? (due_day <= 15 ? due_day + 15 : due_day - 15);
+    const y = today.getFullYear();
+    const m = today.getMonth();
+    const d = today.getDate();
+    const days = [due_day, second].sort((a, b) => a - b);
+    // Return the first day this month that hasn't passed yet
+    for (const day of days) {
+      if (d <= day) return iso(new Date(y, m, day));
+    }
+    // Both passed — return first day next month
+    return iso(new Date(y, m + 1, days[0]));
+  }
 
   // ── Monthly: simple day-of-month ──────────────────────────────────────────
   if (frequency === "monthly") {
@@ -57,18 +77,15 @@ export function computeNextDueDate(
     const y = today.getFullYear();
     const m = today.getMonth();
     const d = today.getDate();
-    // If we haven't passed the due day yet this month, it's this month
-    const candidate = new Date(y, m, due_day);
-    if (d <= due_day) return iso(candidate);
-    // Otherwise next month (Date handles month overflow automatically)
+    if (d <= due_day) return iso(new Date(y, m, due_day));
     return iso(new Date(y, m + 1, due_day));
   }
 
   // ── All others: interval from anchor date ─────────────────────────────────
   if (!anchor_date) return null;
-  const anchor = new Date(anchor_date + "T00:00:00");
+  // Slice to YYYY-MM-DD in case the DB returns a full timestamp string
+  const anchor = new Date(String(anchor_date).slice(0, 10) + "T00:00:00");
 
-  // Advance anchor by the correct interval until we reach today or beyond
   let next = new Date(anchor);
   while (next < today) {
     next = addInterval(next, frequency);

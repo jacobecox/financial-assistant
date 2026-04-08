@@ -27,7 +27,7 @@ export async function POST(req: Request) {
 
   try {
     const [bill] = await sql`
-      INSERT INTO bills (user_id, name, amount, category, frequency, due_day, anchor_date, recurring, active)
+      INSERT INTO bills (user_id, name, amount, category, frequency, due_day, due_day_2, anchor_date, recurring, active)
       VALUES (
         ${userId},
         ${body.name},
@@ -35,6 +35,7 @@ export async function POST(req: Request) {
         ${body.category ?? null},
         ${body.frequency ?? "monthly"},
         ${body.due_day ?? null},
+        ${body.due_day_2 ?? null},
         ${body.anchor_date ?? null},
         ${body.recurring ?? true},
         true
