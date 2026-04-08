@@ -1,5 +1,4 @@
 import { auth } from "@clerk/nextjs/server";
-import { NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
 import { financialTools, executeTool } from "@/lib/ai-tools";
 import type { ChatMessage } from "@/lib/types";
@@ -13,7 +12,7 @@ Today's date is ${new Date().toLocaleDateString("en-US", { weekday: "long", year
 
 export async function POST(req: Request) {
   const { userId } = await auth();
-  if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!userId) return new Response("Unauthorized", { status: 401 });
 
   const { messages }: { messages: ChatMessage[] } = await req.json();
 
@@ -22,44 +21,64 @@ export async function POST(req: Request) {
     content: m.content,
   }));
 
-  // Agentic loop — keep calling Claude until it stops using tools
-  let response = await anthropic.messages.create({
-    model: "claude-sonnet-4-6",
-    max_tokens: 1024,
-    system: SYSTEM_PROMPT,
-    tools: financialTools,
-    messages: anthropicMessages,
+  const encoder = new TextEncoder();
+
+  const readable = new ReadableStream({
+    async start(controller) {
+      try {
+        while (true) {
+          const stream = anthropic.messages.stream({
+            model: "claude-sonnet-4-6",
+            max_tokens: 1024,
+            system: SYSTEM_PROMPT,
+            tools: financialTools,
+            messages: anthropicMessages,
+          });
+
+          // Forward text chunks to the client in real-time.
+          // Tool-use responses produce no text, so this is safe to stream unconditionally.
+          for await (const event of stream) {
+            if (
+              event.type === "content_block_delta" &&
+              event.delta.type === "text_delta"
+            ) {
+              controller.enqueue(encoder.encode(event.delta.text));
+            }
+          }
+
+          const finalMessage = await stream.finalMessage();
+
+          if (finalMessage.stop_reason === "tool_use") {
+            // Execute tools silently, then loop for the next response
+            const toolUseBlocks = finalMessage.content.filter(
+              (b): b is Anthropic.ToolUseBlock => b.type === "tool_use"
+            );
+            const toolResults: Anthropic.ToolResultBlockParam[] = await Promise.all(
+              toolUseBlocks.map(async (block) => ({
+                type: "tool_result" as const,
+                tool_use_id: block.id,
+                content: await executeTool(
+                  block.name,
+                  block.input as Record<string, unknown>,
+                  userId
+                ),
+              }))
+            );
+            anthropicMessages.push({ role: "assistant", content: finalMessage.content });
+            anthropicMessages.push({ role: "user", content: toolResults });
+          } else {
+            break;
+          }
+        }
+      } catch (err) {
+        controller.error(err);
+      } finally {
+        controller.close();
+      }
+    },
   });
 
-  while (response.stop_reason === "tool_use") {
-    const toolUseBlocks = response.content.filter(
-      (b): b is Anthropic.ToolUseBlock => b.type === "tool_use"
-    );
-
-    const toolResults: Anthropic.ToolResultBlockParam[] = await Promise.all(
-      toolUseBlocks.map(async (block) => ({
-        type: "tool_result" as const,
-        tool_use_id: block.id,
-        content: await executeTool(
-          block.name,
-          block.input as Record<string, unknown>,
-          userId
-        ),
-      }))
-    );
-
-    anthropicMessages.push({ role: "assistant", content: response.content });
-    anthropicMessages.push({ role: "user", content: toolResults });
-
-    response = await anthropic.messages.create({
-      model: "claude-sonnet-4-6",
-      max_tokens: 1024,
-      system: SYSTEM_PROMPT,
-      tools: financialTools,
-      messages: anthropicMessages,
-    });
-  }
-
-  const textBlock = response.content.find((b): b is Anthropic.TextBlock => b.type === "text");
-  return NextResponse.json({ content: textBlock?.text ?? "No response." });
+  return new Response(readable, {
+    headers: { "Content-Type": "text/plain; charset=utf-8" },
+  });
 }
