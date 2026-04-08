@@ -220,14 +220,7 @@ export async function executeTool(
       const monthStart = new Date(y, m, 1);
       const monthEnd   = new Date(y, m + 1, 0);
 
-      interface PaycheckInstance {
-        scheduleName: string;
-        amount: number;
-        payDate: Date;
-        nextPayDate: Date;
-      }
-
-      const instances: PaycheckInstance[] = [];
+      const instances: { scheduleName: string; amount: number; payDate: Date; nextPayDate: Date }[] = [];
 
       for (const s of schedules) {
         const amt = Number(s.amount);
@@ -235,33 +228,25 @@ export async function executeTool(
         if (s.frequency === "twice_monthly") {
           const d1 = s.pay_day_1!;
           const d2 = s.pay_day_2!;
-          // Both pay dates this month
           const date1 = new Date(y, m, d1);
           const date2 = new Date(y, m, d2);
-          const next1 = date2; // window: day1 → day2
-          const next2 = new Date(y, m + 1, d1); // window: day2 → day1 next month
-          instances.push({ scheduleName: s.name, amount: amt, payDate: date1, nextPayDate: next1 });
-          instances.push({ scheduleName: s.name, amount: amt, payDate: date2, nextPayDate: next2 });
+          instances.push({ scheduleName: s.name, amount: amt, payDate: date1, nextPayDate: date2 });
+          instances.push({ scheduleName: s.name, amount: amt, payDate: date2, nextPayDate: new Date(y, m + 1, d1) });
         } else if (s.frequency === "monthly") {
           const day = s.pay_day_1!;
-          const payDate = new Date(y, m, day);
-          const nextPayDate = new Date(y, m + 1, day);
-          instances.push({ scheduleName: s.name, amount: amt, payDate, nextPayDate });
+          instances.push({ scheduleName: s.name, amount: amt, payDate: new Date(y, m, day), nextPayDate: new Date(y, m + 1, day) });
         } else if (s.frequency === "biweekly") {
-          // Find all biweekly dates in this month
           const anchorMs = new Date(String(s.anchor_date).slice(0, 10) + "T00:00:00").getTime();
           const intervalMs = 14 * 24 * 60 * 60 * 1000;
-          // Step forward from anchor to find first date in or before month
-          let cur = anchorMs;
-          while (new Date(cur) < monthStart) cur += intervalMs;
-          // Rewind one step in case we overshot
-          while (new Date(cur) > monthStart && cur - intervalMs >= anchorMs) cur -= intervalMs;
-          // Collect all in month
-          while (new Date(cur) <= monthEnd) {
-            const payDate = new Date(cur);
-            const nextPayDate = new Date(cur + intervalMs);
-            if (payDate >= monthStart) {
-              instances.push({ scheduleName: s.name, amount: amt, payDate, nextPayDate });
+          // Fast-forward anchor to first pay date on or after month start
+          const periods = Math.ceil((monthStart.getTime() - anchorMs) / intervalMs);
+          let cur = anchorMs + Math.max(0, periods) * intervalMs;
+          // Step back one if we overshot
+          if (cur > monthStart.getTime()) cur -= intervalMs;
+          // Collect all pay dates within the month
+          while (cur <= monthEnd.getTime()) {
+            if (cur >= monthStart.getTime()) {
+              instances.push({ scheduleName: s.name, amount: amt, payDate: new Date(cur), nextPayDate: new Date(cur + intervalMs) });
             }
             cur += intervalMs;
           }

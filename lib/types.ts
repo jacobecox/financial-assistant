@@ -83,9 +83,3 @@ export interface DiscretionaryItem {
   created_at: string;
 }
 
-export interface SavingsSuggestionResult {
-  suggested_transfer: number;
-  remaining_discretionary: number;
-  total_bills: number;
-  paycheck_amount: number;
-}

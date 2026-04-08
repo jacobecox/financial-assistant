@@ -83,8 +83,10 @@ export function computeNextDueDate(
 
   // ── All others: interval from anchor date ─────────────────────────────────
   if (!anchor_date) return null;
-  // Slice to YYYY-MM-DD in case the DB returns a full timestamp string
-  const anchor = new Date(String(anchor_date).slice(0, 10) + "T00:00:00");
+  // anchor_date may be a Date object (direct DB query) or a string (via JSON API)
+  const anchor = anchor_date instanceof Date
+    ? new Date(anchor_date.toISOString().slice(0, 10) + "T00:00:00")
+    : new Date(String(anchor_date).slice(0, 10) + "T00:00:00");
 
   let next = new Date(anchor);
   while (next < today) {

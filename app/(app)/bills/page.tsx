@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import {
   DndContext, closestCenter, PointerSensor, useSensor, useSensors,
   type DragEndEvent,
@@ -15,6 +15,7 @@ import type { Bill, BillInput, DiscretionaryItem, DiscretionaryFrequency } from 
 import type { BillFrequency } from "@/lib/bills";
 import { frequencyLabel, computeNextDueDate } from "@/lib/bills";
 import { useMonth } from "@/components/MonthContext";
+import { InlineConfirm } from "@/components/InlineConfirm";
 
 // ── Design tokens ─────────────────────────────────────────────────────────────
 
@@ -27,8 +28,6 @@ const btn = {
     "inline-flex items-center justify-center rounded-lg bg-slate-700 px-4 py-2 text-sm font-medium text-slate-200 transition-all duration-150 hover:bg-slate-600 hover:text-white active:scale-95",
   ghost:
     "text-xs font-medium text-emerald-400 transition-colors duration-150 hover:text-emerald-300",
-  danger:
-    "inline-flex items-center justify-center rounded-md bg-red-500/15 px-2.5 py-1 text-xs font-semibold text-red-400 ring-1 ring-inset ring-red-500/25 transition-all duration-150 hover:bg-red-500/25 hover:text-red-300 active:scale-95",
 };
 
 const card = "rounded-xl bg-slate-800 ring-1 ring-white/5 p-4";
@@ -81,52 +80,6 @@ function fmtDate(iso: string) {
 }
 
 // ── Delete confirmation popup ─────────────────────────────────────────────────
-
-function DeleteConfirm({
-  id,
-  confirmingId,
-  onConfirm,
-  onRequest,
-  onCancel,
-}: {
-  id: string;
-  confirmingId: string | null;
-  onConfirm: () => void;
-  onRequest: () => void;
-  onCancel: () => void;
-}) {
-  const active = confirmingId === id;
-  const ref = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!active) return;
-    function handleClick(e: MouseEvent) {
-      if (ref.current && !ref.current.contains(e.target as Node)) onCancel();
-    }
-    document.addEventListener("mousedown", handleClick);
-    return () => document.removeEventListener("mousedown", handleClick);
-  }, [active, onCancel]);
-
-  return (
-    <div className="relative" ref={ref}>
-      <button
-        onClick={active ? onCancel : onRequest}
-        className={active ? "invisible pointer-events-none " + btn.danger : btn.danger}
-      >
-        Delete
-      </button>
-
-      {active && (
-        <div className="absolute bottom-full right-0 z-20 mb-2 flex items-center gap-2 rounded-lg border border-slate-600/70 bg-slate-900 px-3 py-2 shadow-xl shadow-black/50 whitespace-nowrap">
-          <span className="absolute -bottom-1 right-3 h-2 w-2 rotate-45 border-b border-r border-slate-600/70 bg-slate-900" />
-          <span className="text-xs font-medium text-slate-300">Delete?</span>
-          <button onClick={onConfirm} className={btn.danger}>Confirm</button>
-          <button onClick={onCancel} className="text-slate-500 transition-colors hover:text-slate-200 text-sm leading-none">✕</button>
-        </div>
-      )}
-    </div>
-  );
-}
 
 // ── Bill form (add / edit) ────────────────────────────────────────────────────
 
@@ -326,7 +279,7 @@ function PlannedForm({
     setErrors((e) => { const n = { ...e }; Object.keys(patch).forEach((k) => delete n[k]); return n; });
   };
 
-  function handleSubmit(e: React.FormEvent) {
+  function handleSubmit(e: React.SyntheticEvent<HTMLFormElement>) {
     e.preventDefault();
     const errs: Record<string, string> = {};
     if (!form.name.trim())             errs.name         = "Name is required";
@@ -375,7 +328,7 @@ function PlannedForm({
 }
 
 function PlannedSection() {
-  const { year, month, monthLabel } = useMonth();
+  const { year, month } = useMonth();
   const [all, setAll]           = useState<PlannedExpense[]>([]);
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing]   = useState<PlannedExpense | null>(null);
@@ -466,14 +419,12 @@ function PlannedSection() {
                     <p className="text-sm font-bold tabular-nums text-orange-300">{fmt$(p.amount)}</p>
                     <div className="flex items-center gap-3">
                       <button onClick={() => { setShowForm(false); setEditing(p); }} className={btn.ghost}>Edit</button>
-                      {confirmId === p.id ? (
-                        <div className="flex items-center gap-2">
-                          <button onClick={() => handleDelete(p.id)} className={btn.danger}>Confirm</button>
-                          <button onClick={() => setConfirmId(null)} className="text-slate-500 hover:text-slate-200 text-sm">✕</button>
-                        </div>
-                      ) : (
-                        <button onClick={() => setConfirmId(p.id)} className="text-xs text-slate-500 hover:text-slate-300 transition-colors">Remove</button>
-                      )}
+                      <InlineConfirm
+                        isConfirming={confirmId === p.id}
+                        onRequest={() => setConfirmId(p.id)}
+                        onConfirm={() => handleDelete(p.id)}
+                        onCancel={() => setConfirmId(null)}
+                      />
                     </div>
                   </div>
                 </div>
@@ -546,7 +497,7 @@ function DiscretionarySection() {
       ) : (
         <div className={card + " space-y-2"}>
           {items.map((item) => (
-            <div key={item.id} className="flex items-center justify-between rounded-lg bg-slate-900/60 px-3 py-3 ring-1 ring-white/5">
+            <div key={item.id} className="flex items-center justify-between rounded-lg bg-slate-900/60 px-3 py-3 ring-1 ring-white/5 hover:bg-slate-900 transition-colors duration-150">
               <div>
                 <p className="text-sm font-semibold text-slate-100">{item.name}</p>
                 <p className="text-xs text-slate-500 mt-0.5">{DISC_FREQUENCIES.find((f) => f.value === item.frequency)?.label ?? "Monthly"}</p>
@@ -557,13 +508,12 @@ function DiscretionarySection() {
                 </span>
                 <button
                   onClick={() => { setEditing(item); setShowForm(false); setConfirmingId(null); }}
-                  className="text-xs font-medium text-slate-400 transition-colors duration-150 hover:text-slate-200"
+                  className={btn.ghost}
                 >
                   Edit
                 </button>
-                <DeleteConfirm
-                  id={item.id}
-                  confirmingId={confirmingId}
+                <InlineConfirm
+                  isConfirming={confirmingId === item.id}
                   onRequest={() => setConfirmingId(item.id)}
                   onConfirm={() => handleDelete(item.id)}
                   onCancel={() => setConfirmingId(null)}
@@ -649,11 +599,14 @@ function DiscretionaryForm({
 // ── Sortable bill row ─────────────────────────────────────────────────────────
 
 function SortableBillRow({
-  bill, confirmingId, onEdit, onDeleteRequest, onDeleteConfirm, onDeleteCancel,
+  bill, editingId, confirmingId, onEdit, onEditSave, onEditCancel, onDeleteRequest, onDeleteConfirm, onDeleteCancel,
 }: {
   bill: Bill;
+  editingId: string | null;
   confirmingId: string | null;
   onEdit: () => void;
+  onEditSave: (data: BillInput) => Promise<void>;
+  onEditCancel: () => void;
   onDeleteRequest: () => void;
   onDeleteConfirm: () => void;
   onDeleteCancel: () => void;
@@ -661,46 +614,53 @@ function SortableBillRow({
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
     useSortable({ id: bill.id });
 
+  const isEditing = editingId === bill.id;
+
   return (
     <div
       ref={setNodeRef}
       style={{ transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.4 : 1 }}
-      className="group flex items-center gap-2 rounded-lg bg-slate-900/60 px-3 py-3 ring-1 ring-white/5"
+      className={isEditing ? "" : "group flex items-center gap-2 rounded-lg bg-slate-900/60 px-3 py-3 ring-1 ring-white/5 hover:bg-slate-900 transition-colors duration-150"}
     >
-      {/* Drag handle */}
-      <button
-        {...attributes}
-        {...listeners}
-        className="cursor-grab active:cursor-grabbing text-slate-600 opacity-0 group-hover:opacity-100 transition-opacity shrink-0 touch-none"
-        tabIndex={-1}
-      >
-        <svg width="12" height="16" viewBox="0 0 12 16" fill="currentColor">
-          <circle cx="4" cy="3" r="1.5"/><circle cx="8" cy="3" r="1.5"/>
-          <circle cx="4" cy="8" r="1.5"/><circle cx="8" cy="8" r="1.5"/>
-          <circle cx="4" cy="13" r="1.5"/><circle cx="8" cy="13" r="1.5"/>
-        </svg>
-      </button>
+      {isEditing ? (
+        <BillForm initial={bill} onSave={onEditSave} onCancel={onEditCancel} />
+      ) : (
+        <>
+          {/* Drag handle */}
+          <button
+            {...attributes}
+            {...listeners}
+            className="cursor-grab active:cursor-grabbing text-slate-600 opacity-0 group-hover:opacity-100 transition-opacity shrink-0 touch-none"
+            tabIndex={-1}
+          >
+            <svg width="12" height="16" viewBox="0 0 12 16" fill="currentColor">
+              <circle cx="4" cy="3" r="1.5"/><circle cx="8" cy="3" r="1.5"/>
+              <circle cx="4" cy="8" r="1.5"/><circle cx="8" cy="8" r="1.5"/>
+              <circle cx="4" cy="13" r="1.5"/><circle cx="8" cy="13" r="1.5"/>
+            </svg>
+          </button>
 
-      <div className="flex items-center justify-between flex-1 min-w-0">
-        <div className="min-w-0">
-          <p className="text-sm font-semibold text-slate-100 truncate">{bill.name}</p>
-          <p className="text-xs text-slate-500 mt-0.5">
-            {frequencyLabel(bill.frequency)} · next {formatDueDate(bill)}
-            {!bill.recurring && " · one-time"}
-          </p>
-        </div>
-        <div className="flex items-center gap-3 ml-4 shrink-0">
-          <span className="tabular-nums text-sm font-bold text-slate-200">{fmt$(bill.amount)}</span>
-          <button onClick={onEdit} className="text-xs font-medium text-slate-400 transition-colors duration-150 hover:text-slate-200">Edit</button>
-          <DeleteConfirm
-            id={bill.id}
-            confirmingId={confirmingId}
-            onRequest={onDeleteRequest}
-            onConfirm={onDeleteConfirm}
-            onCancel={onDeleteCancel}
-          />
-        </div>
-      </div>
+          <div className="flex items-center justify-between flex-1 min-w-0">
+            <div className="min-w-0">
+              <p className="text-sm font-semibold text-slate-100 truncate">{bill.name}</p>
+              <p className="text-xs text-slate-500 mt-0.5">
+                {frequencyLabel(bill.frequency)} · next {formatDueDate(bill)}
+                {!bill.recurring && " · one-time"}
+              </p>
+            </div>
+            <div className="flex items-center gap-3 ml-4 shrink-0">
+              <span className="tabular-nums text-sm font-bold text-slate-200">{fmt$(bill.amount)}</span>
+              <button onClick={onEdit} className={btn.ghost}>Edit</button>
+              <InlineConfirm
+                isConfirming={confirmingId === bill.id}
+                onRequest={onDeleteRequest}
+                onConfirm={onDeleteConfirm}
+                onCancel={onDeleteCancel}
+              />
+            </div>
+          </div>
+        </>
+      )}
     </div>
   );
 }
@@ -858,7 +818,6 @@ export default function BillsPage() {
       </div>
 
       {showForm && <BillForm onSave={handleAdd} onCancel={() => setShowForm(false)} />}
-      {editing  && <BillForm initial={editing} onSave={handleEdit} onCancel={() => setEditing(null)} />}
 
       {loading ? (
         <p className="text-slate-500 text-sm">Loading…</p>
@@ -875,8 +834,11 @@ export default function BillsPage() {
                       <SortableBillRow
                         key={bill.id}
                         bill={bill}
+                        editingId={editing?.id ?? null}
                         confirmingId={confirmingId}
                         onEdit={() => { setShowForm(false); setEditing(bill); setConfirmingId(null); }}
+                        onEditSave={handleEdit}
+                        onEditCancel={() => setEditing(null)}
                         onDeleteRequest={() => setConfirmingId(bill.id)}
                         onDeleteConfirm={() => handleDelete(bill.id)}
                         onDeleteCancel={() => setConfirmingId(null)}

@@ -1,6 +1,7 @@
 import { UserButton } from "@clerk/nextjs";
 import { NavLinks } from "@/components/NavLinks";
 import { MonthProvider, MonthBar } from "@/components/MonthContext";
+import { ChatProvider } from "@/components/ChatContext";
 
 export default function DashboardLayout({
   children,
@@ -9,6 +10,7 @@ export default function DashboardLayout({
 }) {
   return (
     <MonthProvider>
+    <ChatProvider>
       <div className="flex flex-col min-h-screen">
         <header className="w-full flex items-center justify-between px-3 py-2 border-b border-slate-800 bg-slate-900">
           <NavLinks />
@@ -19,6 +21,7 @@ export default function DashboardLayout({
           {children}
         </main>
       </div>
+    </ChatProvider>
     </MonthProvider>
   );
 }

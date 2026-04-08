@@ -5,6 +5,7 @@ import { CurrencyInput } from "@/components/CurrencyInput";
 import { DateInput } from "@/components/DateInput";
 import type { Frequency } from "@/lib/types";
 import { useMonth } from "@/components/MonthContext";
+import { InlineConfirm } from "@/components/InlineConfirm";
 
 // CurrencyInput and DateInput are used by ScheduleForm below
 
@@ -34,10 +35,6 @@ const btn = {
     "inline-flex items-center justify-center rounded-lg bg-slate-700 px-4 py-2 text-sm font-medium text-slate-200 transition-all duration-150 hover:bg-slate-600 hover:text-white active:scale-95",
   ghost:
     "text-xs font-medium text-emerald-400 transition-colors duration-150 hover:text-emerald-300",
-  danger:
-    "inline-flex items-center justify-center rounded-md bg-red-500/15 px-2.5 py-1 text-xs font-semibold text-red-400 ring-1 ring-inset ring-red-500/25 transition-all duration-150 hover:bg-red-500/25 hover:text-red-300 active:scale-95",
-  muted:
-    "text-xs text-slate-500 transition-colors duration-150 hover:text-slate-300",
 };
 
 const card = "rounded-xl bg-slate-800 ring-1 ring-white/5 p-4";
@@ -77,47 +74,6 @@ function describeSchedule(s: PayScheduleResponse) {
     case "biweekly":      return "Every 2 weeks";
     case "once": { const d = fmtDate(s.anchor_date); return d ? `One-time · ${d}` : "One-time"; }
   }
-}
-
-// ─── Inline delete confirmation ───────────────────────────────────────────────
-
-function DeleteConfirm({
-  id,
-  confirmingId,
-  onConfirm,
-  onRequest,
-  onCancel,
-  label = "Remove",
-}: {
-  id: string;
-  confirmingId: string | null;
-  onConfirm: () => void;
-  onRequest: () => void;
-  onCancel: () => void;
-  label?: string;
-}) {
-  const active = confirmingId === id;
-  return (
-    <div className="relative">
-      {/* Keep button in layout always so row doesn't shift */}
-      <button
-        onClick={active ? onCancel : onRequest}
-        className={active ? "invisible pointer-events-none " + btn.muted : btn.muted}
-      >
-        {label}
-      </button>
-
-      {active && (
-        <div className="absolute bottom-full right-0 z-20 mb-2 flex items-center gap-2 rounded-lg border border-slate-600/70 bg-slate-900 px-3 py-2 shadow-xl shadow-black/50 whitespace-nowrap">
-          {/* small caret */}
-          <span className="absolute -bottom-1 right-3 h-2 w-2 rotate-45 border-b border-r border-slate-600/70 bg-slate-900" />
-          <span className="text-xs font-medium text-slate-300">Delete?</span>
-          <button onClick={onConfirm} className={btn.danger}>Confirm</button>
-          <button onClick={onCancel} className="text-slate-500 transition-colors hover:text-slate-200 text-sm leading-none">✕</button>
-        </div>
-      )}
-    </div>
-  );
 }
 
 // ─── Schedule form ────────────────────────────────────────────────────────────
@@ -360,9 +316,8 @@ function PayScheduleSection({
                       >
                         Edit
                       </button>
-                      <DeleteConfirm
-                        id={s.id}
-                        confirmingId={confirmingDelete}
+                      <InlineConfirm
+                        isConfirming={confirmingDelete === s.id}
                         onRequest={() => setConfirmingDelete(s.id)}
                         onConfirm={() => handleDelete(s.id)}
                         onCancel={() => setConfirmingDelete(null)}

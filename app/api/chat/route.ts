@@ -18,7 +18,7 @@ The formula for max savings per paycheck is:
   max_savings = paycheck_amount - bills_due_in_window - buffer_reserved
 
 - "buffer" = the user's discretionary/buffer items (from get_buffer_summary). These are amounts intentionally kept liquid each pay period, NOT transferred to savings.
-- "bills_due_in_window" = bills due between this paycheck and the next.
+- "bills_due_in_window" = bills due on or after this paycheck date and before the next paycheck date. A bill due on the same day as a paycheck is paid from that paycheck, not the previous one.
 - Planned one-time expenses reduce savings for that month but are spread across both paychecks.
 
 When asked about savings per paycheck, always call suggest_savings_transfer — it runs this exact math and returns a per-paycheck breakdown. Do not estimate or use a percentage heuristic.`;
@@ -75,7 +75,10 @@ export async function POST(req: Request) {
                   block.name,
                   block.input as Record<string, unknown>,
                   userId
-                ),
+                ).catch((e) => {
+                  console.error(`[chat] tool "${block.name}" threw:`, e);
+                  return JSON.stringify({ error: String(e) });
+                }),
               }))
             );
             anthropicMessages.push({ role: "assistant", content: finalMessage.content });

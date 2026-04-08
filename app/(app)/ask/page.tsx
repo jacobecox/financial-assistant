@@ -4,11 +4,8 @@ import { useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { useMonth } from "@/components/MonthContext";
-
-interface Message {
-  role: "user" | "assistant";
-  content: string;
-}
+import { useChat } from "@/components/ChatContext";
+import type { Message } from "@/components/ChatContext";
 
 function Markdown({ children }: { children: string }) {
   return (
@@ -52,10 +49,8 @@ const SUGGESTIONS = [
 
 export default function AskPage() {
   const { monthLabel } = useMonth();
-  const [messages, setMessages] = useState<Message[]>([]);
+  const { messages, setMessages, loading, setLoading, streamingContent, setStreamingContent } = useChat();
   const [input, setInput] = useState("");
-  const [loading, setLoading] = useState(false);       // true = dots (tool calls running)
-  const [streamingContent, setStreamingContent] = useState<string | null>(null); // text arriving
   const bottomRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -94,15 +89,13 @@ export default function AskPage() {
         if (done) break;
         const chunk = decoder.decode(value, { stream: true });
         accumulated += chunk;
-        // First chunk: switch from dots to streaming bubble
         if (accumulated.length > 0) setLoading(false);
         setStreamingContent(accumulated);
       }
 
-      // Commit completed message to history
-      setMessages((prev) => [...prev, { role: "assistant", content: accumulated }]);
+      setMessages((prev: Message[]) => [...prev, { role: "assistant", content: accumulated }]);
     } catch {
-      setMessages((prev) => [
+      setMessages((prev: Message[]) => [
         ...prev,
         { role: "assistant", content: "Something went wrong. Please try again." },
       ]);
@@ -163,7 +156,7 @@ export default function AskPage() {
           </div>
         )}
 
-        {messages.map((m, i) => (
+        {messages.map((m: Message, i: number) => (
           <div key={i} className={`flex ${m.role === "user" ? "justify-end" : "justify-start"}`}>
             <div
               className={`max-w-[85%] rounded-2xl px-4 py-3 text-sm leading-relaxed ${
@@ -177,7 +170,7 @@ export default function AskPage() {
           </div>
         ))}
 
-        {/* Dots while tool calls run (before any text) */}
+        {/* Dots while tool calls run */}
         {loading && (
           <div className="flex justify-start">
             <div className="bg-slate-800 ring-1 ring-white/5 rounded-2xl rounded-bl-sm px-4 py-3">
@@ -190,7 +183,7 @@ export default function AskPage() {
           </div>
         )}
 
-        {/* Streaming bubble — text arriving live */}
+        {/* Streaming bubble */}
         {streamingContent !== null && (
           <div className="flex justify-start">
             <div className="max-w-[85%] rounded-2xl rounded-bl-sm px-4 py-3 text-sm leading-relaxed bg-slate-800 text-slate-100 ring-1 ring-white/5">
