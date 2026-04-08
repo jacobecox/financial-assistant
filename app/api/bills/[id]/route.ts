@@ -13,12 +13,14 @@ export async function PUT(
   const { id } = await params;
   const body: Partial<BillInput> = await req.json();
 
-  // Build update object from only the fields that were sent
   const fields: Record<string, unknown> = {};
-  if (body.name !== undefined) fields.name = body.name;
-  if (body.amount !== undefined) fields.amount = body.amount;
-  if (body.due_day !== undefined) fields.due_day = body.due_day;
-  if (body.recurring !== undefined) fields.recurring = body.recurring;
+  if (body.name        !== undefined) fields.name        = body.name;
+  if (body.amount      !== undefined) fields.amount      = body.amount;
+  if (body.category    !== undefined) fields.category    = body.category;
+  if (body.frequency   !== undefined) fields.frequency   = body.frequency;
+  if (body.due_day     !== undefined) fields.due_day     = body.due_day;
+  if (body.anchor_date !== undefined) fields.anchor_date = body.anchor_date;
+  if (body.recurring   !== undefined) fields.recurring   = body.recurring;
 
   if (Object.keys(fields).length === 0) {
     return NextResponse.json({ error: "No fields to update" }, { status: 400 });
@@ -26,8 +28,7 @@ export async function PUT(
 
   try {
     const [bill] = await sql`
-      UPDATE bills
-      SET ${sql(fields)}
+      UPDATE bills SET ${sql(fields)}
       WHERE id = ${id}::uuid AND user_id = ${userId}
       RETURNING *
     `;
@@ -48,11 +49,7 @@ export async function DELETE(
   const { id } = await params;
 
   try {
-    // Soft-delete by setting active = false
-    await sql`
-      UPDATE bills SET active = false
-      WHERE id = ${id}::uuid AND user_id = ${userId}
-    `;
+    await sql`UPDATE bills SET active = false WHERE id = ${id}::uuid AND user_id = ${userId}`;
     return new NextResponse(null, { status: 204 });
   } catch (e) {
     return NextResponse.json({ error: String(e) }, { status: 500 });

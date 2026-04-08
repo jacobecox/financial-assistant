@@ -11,7 +11,7 @@ export async function GET() {
     const bills = await sql`
       SELECT * FROM bills
       WHERE user_id = ${userId} AND active = true
-      ORDER BY due_day ASC
+      ORDER BY category ASC NULLS LAST, due_day ASC NULLS LAST
     `;
     return NextResponse.json(bills);
   } catch (e) {
@@ -27,8 +27,18 @@ export async function POST(req: Request) {
 
   try {
     const [bill] = await sql`
-      INSERT INTO bills (user_id, name, amount, due_day, recurring, active)
-      VALUES (${userId}, ${body.name}, ${body.amount}, ${body.due_day}, ${body.recurring ?? true}, true)
+      INSERT INTO bills (user_id, name, amount, category, frequency, due_day, anchor_date, recurring, active)
+      VALUES (
+        ${userId},
+        ${body.name},
+        ${body.amount},
+        ${body.category ?? null},
+        ${body.frequency ?? "monthly"},
+        ${body.due_day ?? null},
+        ${body.anchor_date ?? null},
+        ${body.recurring ?? true},
+        true
+      )
       RETURNING *
     `;
     return NextResponse.json(bill, { status: 201 });

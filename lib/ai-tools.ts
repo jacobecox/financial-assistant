@@ -1,6 +1,7 @@
 import type Anthropic from "@anthropic-ai/sdk";
 import sql from "./db";
 import { computePayDates, type PaySchedule } from "./pay-schedule";
+import { computeNextDueDate, monthlyEquivalent, type BillDateInfo } from "./bills";
 import type { UpcomingBillsResult, SavingsSuggestionResult } from "./types";
 
 // Tool definitions passed to Claude
@@ -75,23 +76,24 @@ export async function executeTool(
   switch (toolName) {
     case "get_upcoming_bills": {
       const beforeDate = toolInput.before_date as string;
-      const bills = await sql<{ name: string; amount: number; due_day: number }[]>`
-        SELECT name, amount, due_day FROM bills
+      const cutoff = new Date(beforeDate);
+      const bills = await sql<(BillDateInfo & { name: string })[]>`
+        SELECT name, amount, frequency, due_day, anchor_date FROM bills
         WHERE user_id = ${userId} AND active = true
       `;
 
-      const currentMonth = new Date().getMonth() + 1;
-      const currentYear = new Date().getFullYear();
-      const cutoff = new Date(beforeDate);
-
-      const upcoming = bills.filter((b: { name: string; amount: number; due_day: number }) => {
-        const dueDate = new Date(currentYear, currentMonth - 1, b.due_day);
-        return dueDate <= cutoff;
-      });
+      const upcoming = bills
+        .map((b) => ({ ...b, next_due: computeNextDueDate(b) }))
+        .filter((b) => b.next_due !== null && new Date(b.next_due) <= cutoff);
 
       const result: UpcomingBillsResult = {
-        bills: upcoming,
-        total: upcoming.reduce((sum: number, b: { amount: number }) => sum + Number(b.amount), 0),
+        bills: upcoming.map((b) => ({
+          name: b.name,
+          amount: Number(b.amount),
+          frequency: b.frequency,
+          next_due: b.next_due!,
+        })),
+        total: upcoming.reduce((sum, b) => sum + Number(b.amount), 0),
       };
       return JSON.stringify(result);
     }
@@ -113,12 +115,15 @@ export async function executeTool(
     }
 
     case "get_expenses_summary": {
-      const bills = await sql<{ name: string; amount: number }[]>`
-        SELECT name, amount FROM bills
+      const bills = await sql<(BillDateInfo & { name: string })[]>`
+        SELECT name, amount, frequency, due_day, anchor_date FROM bills
         WHERE user_id = ${userId} AND active = true AND recurring = true
       `;
-      const total = bills.reduce((sum: number, b: { name: string; amount: number }) => sum + Number(b.amount), 0);
-      return JSON.stringify({ bills, total });
+      const total = bills.reduce((sum: number, b: BillDateInfo) => sum + monthlyEquivalent(b), 0);
+      return JSON.stringify({
+        bills: bills.map((b) => ({ name: b.name, amount: Number(b.amount), frequency: b.frequency, monthly_equivalent: monthlyEquivalent(b) })),
+        total,
+      });
     }
 
     case "get_income_summary": {
@@ -153,8 +158,8 @@ export async function executeTool(
 
       const totalScheduled = schedules.reduce((sum, s) => sum + Number(s.amount), 0);
 
-      const bills = await sql<{ amount: number; due_day: number }[]>`
-        SELECT amount, due_day FROM bills
+      const bills = await sql<BillDateInfo[]>`
+        SELECT amount, frequency, due_day, anchor_date FROM bills
         WHERE user_id = ${userId} AND active = true
       `;
 
@@ -167,14 +172,11 @@ export async function executeTool(
       const availableIncome = actualIncome > 0 ? actualIncome : totalScheduled;
 
       const next_pay_date = latestNextPayDate;
-
-      const currentMonth = new Date().getMonth() + 1;
-      const currentYear = new Date().getFullYear();
       const cutoff = new Date(next_pay_date);
 
-      const dueBills = bills.filter((b: { amount: number; due_day: number }) => {
-        const dueDate = new Date(currentYear, currentMonth - 1, b.due_day);
-        return dueDate <= cutoff;
+      const dueBills = bills.filter((b: BillDateInfo) => {
+        const nextDue = computeNextDueDate(b);
+        return nextDue !== null && new Date(nextDue) <= cutoff;
       });
 
       const totalBills = dueBills.reduce((sum: number, b: { amount: number }) => sum + Number(b.amount), 0);
