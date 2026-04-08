@@ -9,7 +9,7 @@ const links = [
   { href: "/income",    label: "Income" },
   { href: "/bills",     label: "Bills" },
   { href: "/calendar",  label: "Calendar" },
-  { href: "/chat",      label: "Chat" },
+  { href: "/ask",       label: "Ask AI" },
 ];
 
 export function NavLinks() {
