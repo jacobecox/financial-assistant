@@ -1,22 +1,22 @@
 import { auth } from "@clerk/nextjs/server";
 import { NextResponse } from "next/server";
-import { createServiceClient } from "@/lib/supabase";
+import sql from "@/lib/db";
 import type { BillInput } from "@/lib/types";
 
 export async function GET() {
   const { userId } = await auth();
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const client = createServiceClient();
-  const { data, error } = await client
-    .from("bills")
-    .select("*")
-    .eq("user_id", userId)
-    .eq("active", true)
-    .order("due_day", { ascending: true });
-
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-  return NextResponse.json(data);
+  try {
+    const bills = await sql`
+      SELECT * FROM bills
+      WHERE user_id = ${userId} AND active = true
+      ORDER BY due_day ASC
+    `;
+    return NextResponse.json(bills);
+  } catch (e) {
+    return NextResponse.json({ error: String(e) }, { status: 500 });
+  }
 }
 
 export async function POST(req: Request) {
@@ -24,14 +24,15 @@ export async function POST(req: Request) {
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const body: BillInput = await req.json();
-  const client = createServiceClient();
 
-  const { data, error } = await client
-    .from("bills")
-    .insert({ ...body, user_id: userId, recurring: body.recurring ?? true, active: true })
-    .select()
-    .single();
-
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-  return NextResponse.json(data, { status: 201 });
+  try {
+    const [bill] = await sql`
+      INSERT INTO bills (user_id, name, amount, due_day, recurring, active)
+      VALUES (${userId}, ${body.name}, ${body.amount}, ${body.due_day}, ${body.recurring ?? true}, true)
+      RETURNING *
+    `;
+    return NextResponse.json(bill, { status: 201 });
+  } catch (e) {
+    return NextResponse.json({ error: String(e) }, { status: 500 });
+  }
 }

@@ -1,7 +1,6 @@
 import { auth } from "@clerk/nextjs/server";
 import { NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
-import { createServiceClient } from "@/lib/supabase";
 import { financialTools, executeTool } from "@/lib/ai-tools";
 import type { ChatMessage } from "@/lib/types";
 
@@ -17,7 +16,6 @@ export async function POST(req: Request) {
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const { messages }: { messages: ChatMessage[] } = await req.json();
-  const client = createServiceClient();
 
   const anthropicMessages: Anthropic.MessageParam[] = messages.map((m) => ({
     role: m.role,
@@ -45,8 +43,7 @@ export async function POST(req: Request) {
         content: await executeTool(
           block.name,
           block.input as Record<string, unknown>,
-          userId,
-          client
+          userId
         ),
       }))
     );

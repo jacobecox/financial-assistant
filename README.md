@@ -4,8 +4,8 @@ A private, mobile-first web app for paycheck-aware budgeting. Built for two user
 
 ## Stack
 
-- **Next.js 15** (App Router) — [Vercel](https://vercel.com) hosted
-- **Supabase** — Postgres database
+- **Next.js 15** (App Router) — containerized, deployed on [Control Plane](https://controlplane.com)
+- **PostgreSQL** — Control Plane postgres workload (talks to the app via internal hostname)
 - **Clerk** — Auth with Google SSO
 - **Anthropic Claude** — Conversational AI with tool use
 - **Tailwind CSS** — Styling
@@ -21,7 +21,7 @@ A private, mobile-first web app for paycheck-aware budgeting. Built for two user
 
 1. Copy `.env.local.example` to `.env.local` and fill in your keys:
    - [Clerk Dashboard](https://dashboard.clerk.com) — create an app, enable Google SSO
-   - [Supabase Dashboard](https://supabase.com) — create a project, run the schema below
+   - `DATABASE_URL` — local Postgres for dev (e.g. `postgresql://postgres:postgres@localhost:5432/finance`)
    - [Anthropic Console](https://console.anthropic.com) — get an API key
 
 2. Install dependencies:
@@ -36,7 +36,7 @@ A private, mobile-first web app for paycheck-aware budgeting. Built for two user
 
 ## Database Schema
 
-Run this in your Supabase SQL editor:
+Run this against your Postgres database:
 
 ```sql
 create table paychecks (
@@ -59,9 +59,9 @@ create table bills (
   created_at timestamptz default now()
 );
 
--- Row-level security (enable after testing)
-alter table paychecks enable row level security;
-alter table bills enable row level security;
+-- Indexes for user_id lookups
+create index on paychecks (user_id, pay_date desc);
+create index on bills (user_id, active, due_day);
 ```
 
 ## Project Structure
@@ -79,22 +79,23 @@ app/
   sign-in/ sign-up/   # Clerk auth pages
 lib/
   types.ts            # Shared TypeScript types
-  supabase.ts         # Supabase client helpers
+  db.ts               # postgres.js singleton (connects via DATABASE_URL)
   ai-tools.ts         # Claude tool definitions + executor
 middleware.ts         # Clerk auth protection
 public/manifest.json  # PWA manifest
+Dockerfile            # Standalone Next.js image for Control Plane
 ```
 
 ## Roadmap
 
 ### Part 1 — Core (current)
-- [x] Project scaffold — Next.js, Supabase, Clerk, Claude
-- [ ] Supabase schema + RLS policies
+- [x] Project scaffold — Next.js, Postgres, Clerk, Claude
+- [ ] Postgres schema + indexes (run SQL above)
 - [ ] Bills CRUD UI
 - [ ] Paycheck entry form
 - [ ] Paycheck overview with live data
 - [ ] AI chat with working tool calls
-- [ ] Vercel deployment + custom domain
+- [ ] Control Plane deployment (app workload + postgres workload)
 - [ ] PWA icons + install flow
 
 ### Part 2 — Plaid Integration (future)

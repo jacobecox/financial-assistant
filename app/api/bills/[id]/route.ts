@@ -1,6 +1,6 @@
 import { auth } from "@clerk/nextjs/server";
 import { NextResponse } from "next/server";
-import { createServiceClient } from "@/lib/supabase";
+import sql from "@/lib/db";
 import type { BillInput } from "@/lib/types";
 
 export async function PUT(
@@ -12,18 +12,30 @@ export async function PUT(
 
   const { id } = await params;
   const body: Partial<BillInput> = await req.json();
-  const client = createServiceClient();
 
-  const { data, error } = await client
-    .from("bills")
-    .update(body)
-    .eq("id", id)
-    .eq("user_id", userId)
-    .select()
-    .single();
+  // Build update object from only the fields that were sent
+  const fields: Record<string, unknown> = {};
+  if (body.name !== undefined) fields.name = body.name;
+  if (body.amount !== undefined) fields.amount = body.amount;
+  if (body.due_day !== undefined) fields.due_day = body.due_day;
+  if (body.recurring !== undefined) fields.recurring = body.recurring;
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-  return NextResponse.json(data);
+  if (Object.keys(fields).length === 0) {
+    return NextResponse.json({ error: "No fields to update" }, { status: 400 });
+  }
+
+  try {
+    const [bill] = await sql`
+      UPDATE bills
+      SET ${sql(fields)}
+      WHERE id = ${id}::uuid AND user_id = ${userId}
+      RETURNING *
+    `;
+    if (!bill) return NextResponse.json({ error: "Not found" }, { status: 404 });
+    return NextResponse.json(bill);
+  } catch (e) {
+    return NextResponse.json({ error: String(e) }, { status: 500 });
+  }
 }
 
 export async function DELETE(
@@ -34,15 +46,15 @@ export async function DELETE(
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const { id } = await params;
-  const client = createServiceClient();
 
-  // Soft-delete by setting active = false
-  const { error } = await client
-    .from("bills")
-    .update({ active: false })
-    .eq("id", id)
-    .eq("user_id", userId);
-
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-  return new NextResponse(null, { status: 204 });
+  try {
+    // Soft-delete by setting active = false
+    await sql`
+      UPDATE bills SET active = false
+      WHERE id = ${id}::uuid AND user_id = ${userId}
+    `;
+    return new NextResponse(null, { status: 204 });
+  } catch (e) {
+    return NextResponse.json({ error: String(e) }, { status: 500 });
+  }
 }
