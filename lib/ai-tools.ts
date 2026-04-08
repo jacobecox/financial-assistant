@@ -2,7 +2,7 @@ import type Anthropic from "@anthropic-ai/sdk";
 import sql from "./db";
 import { computePayDates, type PaySchedule } from "./pay-schedule";
 import { computeNextDueDate, monthlyEquivalent, type BillDateInfo } from "./bills";
-import type { UpcomingBillsResult, SavingsSuggestionResult } from "./types";
+import type { UpcomingBillsResult } from "./types";
 
 // Tool definitions passed to Claude
 export const financialTools: Anthropic.Tool[] = [
@@ -24,7 +24,7 @@ export const financialTools: Anthropic.Tool[] = [
   {
     name: "get_current_paycheck",
     description:
-      "Returns the current paycheck amount plus the current and next pay dates derived from the user's pay schedule.",
+      "Returns each pay schedule with its current and next pay dates, and amounts.",
     input_schema: {
       type: "object" as const,
       properties: {},
@@ -33,7 +33,7 @@ export const financialTools: Anthropic.Tool[] = [
   },
   {
     name: "get_expenses_summary",
-    description: "Returns the total of all active recurring monthly bills.",
+    description: "Returns the total of all active recurring monthly bills with their monthly equivalents.",
     input_schema: {
       type: "object" as const,
       properties: {},
@@ -56,9 +56,32 @@ export const financialTools: Anthropic.Tool[] = [
     },
   },
   {
+    name: "get_buffer_summary",
+    description:
+      "Returns the user's discretionary buffer items — amounts reserved each paycheck as a buffer before savings. Always fetch this when calculating max savings per paycheck.",
+    input_schema: {
+      type: "object" as const,
+      properties: {},
+      required: [],
+    },
+  },
+  {
+    name: "get_planned_expenses",
+    description:
+      "Returns one-time planned expenses for a given month. Use this when calculating savings for a specific month.",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        year:  { type: "number", description: "4-digit year" },
+        month: { type: "number", description: "Month as 1-12" },
+      },
+      required: ["year", "month"],
+    },
+  },
+  {
     name: "suggest_savings_transfer",
     description:
-      "Calculates a realistic savings transfer amount after accounting for all bills due before the next paycheck.",
+      "Calculates the maximum savings transfer per paycheck. For each paycheck: income - bills_due_in_window - buffer_for_this_paycheck - planned_expenses = max_savings. Returns a breakdown per paycheck.",
     input_schema: {
       type: "object" as const,
       properties: {},
@@ -137,59 +160,153 @@ export async function executeTool(
       return JSON.stringify({ entries, total });
     }
 
+    case "get_buffer_summary": {
+      const items = await sql<{ name: string; amount: number; frequency: string }[]>`
+        SELECT name, amount, frequency FROM discretionary_items
+        WHERE user_id = ${userId} AND active = true
+        ORDER BY created_at ASC
+      `;
+      const total = items.reduce((sum, d) => sum + Number(d.amount), 0);
+      return JSON.stringify({
+        items: items.map((d) => ({ name: d.name, amount: Number(d.amount), frequency: d.frequency })),
+        total_buffer: total,
+        note: "These are the amounts the user keeps as a buffer each paycheck cycle. Subtract these from each paycheck before calculating max savings.",
+      });
+    }
+
+    case "get_planned_expenses": {
+      const year  = toolInput.year  as number;
+      const month = toolInput.month as number; // 1-indexed
+      const rows = await sql<{ name: string; amount: number; planned_date: string; notes: string | null }[]>`
+        SELECT name, amount, planned_date, notes FROM planned_expenses
+        WHERE user_id = ${userId}
+          AND active = true
+          AND EXTRACT(year  FROM planned_date) = ${year}
+          AND EXTRACT(month FROM planned_date) = ${month}
+        ORDER BY planned_date ASC
+      `;
+      const total = rows.reduce((sum, r) => sum + Number(r.amount), 0);
+      return JSON.stringify({ expenses: rows, total_planned: total });
+    }
+
     case "suggest_savings_transfer": {
       const schedules = await sql<PaySchedule[]>`
         SELECT * FROM pay_schedules WHERE user_id = ${userId} ORDER BY created_at ASC
       `;
       if (!schedules.length) return JSON.stringify({ error: "No pay schedules set up" });
 
-      // Use the earliest current_pay_date across all schedules as period start
-      const computedSchedules = schedules.map((s) => ({ ...s, ...computePayDates(s) }));
-      const earliestCurrentPayDate = computedSchedules
-        .map((s) => s.current_pay_date)
-        .sort()[0];
-      // Use the latest next_pay_date for the bill cutoff
-      const latestNextPayDate = computedSchedules
-        .map((s) => s.next_pay_date)
-        .filter(Boolean)
-        .sort()
-        .at(-1);
-      if (!latestNextPayDate) return JSON.stringify({ error: "No next pay date available" });
-
-      const totalScheduled = schedules.reduce((sum, s) => sum + Number(s.amount), 0);
-
-      const bills = await sql<BillDateInfo[]>`
-        SELECT amount, frequency, due_day, due_day_2, anchor_date FROM bills
+      const allBills = await sql<(BillDateInfo & { name: string })[]>`
+        SELECT name, amount, frequency, due_day, due_day_2, anchor_date FROM bills
         WHERE user_id = ${userId} AND active = true
       `;
 
-      // Use actual income this period if recorded; fall back to sum of scheduled amounts
-      const incomeEntries = await sql<{ amount: number }[]>`
-        SELECT amount FROM income
-        WHERE user_id = ${userId} AND date >= ${earliestCurrentPayDate}::date
+      const bufferItems = await sql<{ name: string; amount: number }[]>`
+        SELECT name, amount FROM discretionary_items WHERE user_id = ${userId} AND active = true
       `;
-      const actualIncome = incomeEntries.reduce((sum: number, e: { amount: number }) => sum + Number(e.amount), 0);
-      const availableIncome = actualIncome > 0 ? actualIncome : totalScheduled;
+      const totalBuffer = bufferItems.reduce((sum, d) => sum + Number(d.amount), 0);
 
-      const next_pay_date = latestNextPayDate;
-      const cutoff = new Date(next_pay_date);
+      const now = new Date();
+      const plannedRows = await sql<{ name: string; amount: number; planned_date: string }[]>`
+        SELECT name, amount, planned_date FROM planned_expenses
+        WHERE user_id = ${userId} AND active = true
+          AND EXTRACT(year  FROM planned_date) = ${now.getFullYear()}
+          AND EXTRACT(month FROM planned_date) = ${now.getMonth() + 1}
+      `;
+      const totalPlanned = plannedRows.reduce((sum, r) => sum + Number(r.amount), 0);
 
-      const dueBills = bills.filter((b: BillDateInfo) => {
-        const nextDue = computeNextDueDate(b);
-        return nextDue !== null && new Date(nextDue) <= cutoff;
+      // Expand each schedule into individual paycheck instances for this month
+      const y = now.getFullYear();
+      const m = now.getMonth(); // 0-indexed
+      const monthStart = new Date(y, m, 1);
+      const monthEnd   = new Date(y, m + 1, 0);
+
+      interface PaycheckInstance {
+        scheduleName: string;
+        amount: number;
+        payDate: Date;
+        nextPayDate: Date;
+      }
+
+      const instances: PaycheckInstance[] = [];
+
+      for (const s of schedules) {
+        const amt = Number(s.amount);
+
+        if (s.frequency === "twice_monthly") {
+          const d1 = s.pay_day_1!;
+          const d2 = s.pay_day_2!;
+          // Both pay dates this month
+          const date1 = new Date(y, m, d1);
+          const date2 = new Date(y, m, d2);
+          const next1 = date2; // window: day1 → day2
+          const next2 = new Date(y, m + 1, d1); // window: day2 → day1 next month
+          instances.push({ scheduleName: s.name, amount: amt, payDate: date1, nextPayDate: next1 });
+          instances.push({ scheduleName: s.name, amount: amt, payDate: date2, nextPayDate: next2 });
+        } else if (s.frequency === "monthly") {
+          const day = s.pay_day_1!;
+          const payDate = new Date(y, m, day);
+          const nextPayDate = new Date(y, m + 1, day);
+          instances.push({ scheduleName: s.name, amount: amt, payDate, nextPayDate });
+        } else if (s.frequency === "biweekly") {
+          // Find all biweekly dates in this month
+          const anchorMs = new Date(String(s.anchor_date).slice(0, 10) + "T00:00:00").getTime();
+          const intervalMs = 14 * 24 * 60 * 60 * 1000;
+          // Step forward from anchor to find first date in or before month
+          let cur = anchorMs;
+          while (new Date(cur) < monthStart) cur += intervalMs;
+          // Rewind one step in case we overshot
+          while (new Date(cur) > monthStart && cur - intervalMs >= anchorMs) cur -= intervalMs;
+          // Collect all in month
+          while (new Date(cur) <= monthEnd) {
+            const payDate = new Date(cur);
+            const nextPayDate = new Date(cur + intervalMs);
+            if (payDate >= monthStart) {
+              instances.push({ scheduleName: s.name, amount: amt, payDate, nextPayDate });
+            }
+            cur += intervalMs;
+          }
+        } else if (s.frequency === "once") {
+          const d = new Date(String(s.anchor_date).slice(0, 10) + "T00:00:00");
+          if (d >= monthStart && d <= monthEnd) {
+            instances.push({ scheduleName: s.name, amount: amt, payDate: d, nextPayDate: monthEnd });
+          }
+        }
+      }
+
+      instances.sort((a, b) => a.payDate.getTime() - b.payDate.getTime());
+
+      // For each instance, find bills due in its window [payDate, nextPayDate)
+      const paychecks = instances.map((inst) => {
+        const dueBills = allBills
+          .map((b) => ({ ...b, next_due: computeNextDueDate(b) }))
+          .filter((b) => {
+            if (!b.next_due) return false;
+            const due = new Date(b.next_due);
+            return due >= inst.payDate && due < inst.nextPayDate;
+          });
+
+        const billsTotal = dueBills.reduce((sum, b) => sum + Number(b.amount), 0);
+        const maxSavings = Math.max(0, inst.amount - billsTotal - totalBuffer);
+
+        return {
+          name: inst.scheduleName,
+          pay_date: inst.payDate.toISOString().split("T")[0],
+          next_pay_date: inst.nextPayDate.toISOString().split("T")[0],
+          paycheck_amount: inst.amount,
+          bills_due_in_window: dueBills.map((b) => ({ name: b.name, amount: Number(b.amount), due: b.next_due })),
+          bills_total: billsTotal,
+          buffer_reserved: totalBuffer,
+          max_savings: maxSavings,
+          calculation: `$${inst.amount} - $${billsTotal} bills - $${totalBuffer} buffer = $${maxSavings}`,
+        };
       });
 
-      const totalBills = dueBills.reduce((sum: number, b: { amount: number }) => sum + Number(b.amount), 0);
-      const afterBills = availableIncome - totalBills;
-      const suggestedTransfer = Math.max(0, Math.floor(afterBills * 0.5));
-
-      const result: SavingsSuggestionResult = {
-        suggested_transfer: suggestedTransfer,
-        remaining_discretionary: afterBills - suggestedTransfer,
-        total_bills: totalBills,
-        paycheck_amount: availableIncome,
-      };
-      return JSON.stringify(result);
+      return JSON.stringify({
+        paychecks,
+        planned_expenses_this_month: plannedRows.map((r) => ({ name: r.name, amount: Number(r.amount), date: r.planned_date })),
+        total_planned: totalPlanned,
+        note: "max_savings = paycheck_amount - bills_due_in_window - buffer_reserved. Planned expenses shown for context — factor them into the paycheck(s) closest to their due date.",
+      });
     }
 
     default:
