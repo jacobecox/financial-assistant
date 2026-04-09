@@ -5,13 +5,13 @@ import { ClerkProvider } from "@clerk/nextjs";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Finance Assistant",
-  description: "Personal finance assistant for paycheck planning",
+  title: "PayClarity",
+  description: "Know exactly where your money goes every paycheck.",
   manifest: "/manifest.json",
   appleWebApp: {
     capable: true,
     statusBarStyle: "default",
-    title: "Finance",
+    title: "PayClarity",
   },
 };
 

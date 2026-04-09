@@ -1,7 +1,7 @@
 {
-  "name": "Finance Assistant",
-  "short_name": "Finance",
-  "description": "Personal finance assistant for paycheck planning",
+  "name": "PayClarity",
+  "short_name": "PayClarity",
+  "description": "Know exactly where your money goes every paycheck.",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#020617",

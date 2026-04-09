@@ -5,7 +5,7 @@ export default function LandingPage() {
     <main className="min-h-screen bg-slate-950 flex flex-col items-center justify-center px-4 text-center">
       <div className="max-w-md w-full space-y-8">
         <div className="space-y-3">
-          <h1 className="text-4xl font-bold text-slate-50">Financial Assistant</h1>
+          <h1 className="text-4xl font-bold text-slate-50">PayClarity</h1>
           <p className="text-slate-400 text-lg">
             Track bills, paychecks, and savings — together.
           </p>
