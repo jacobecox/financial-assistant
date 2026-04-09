@@ -1,6 +1,7 @@
 import { auth } from "@clerk/nextjs/server";
 import { NextResponse } from "next/server";
 import sql from "@/lib/db";
+import { getHouseholdId } from "@/lib/household";
 import type { BillInput } from "@/lib/types";
 
 export async function PUT(
@@ -9,6 +10,9 @@ export async function PUT(
 ) {
   const { userId } = await auth();
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  const householdId = await getHouseholdId(userId);
+  if (!householdId) return NextResponse.json({ error: "no_household" }, { status: 404 });
 
   const { id } = await params;
   const body: Partial<BillInput> = await req.json();
@@ -23,14 +27,13 @@ export async function PUT(
   if (body.anchor_date !== undefined) fields.anchor_date = body.anchor_date;
   if (body.recurring   !== undefined) fields.recurring   = body.recurring;
 
-  if (Object.keys(fields).length === 0) {
+  if (Object.keys(fields).length === 0)
     return NextResponse.json({ error: "No fields to update" }, { status: 400 });
-  }
 
   try {
     const [bill] = await sql`
       UPDATE bills SET ${sql(fields)}
-      WHERE id = ${id}::uuid AND user_id = ${userId}
+      WHERE id = ${id}::uuid AND household_id = ${householdId}
       RETURNING *
     `;
     if (!bill) return NextResponse.json({ error: "Not found" }, { status: 404 });
@@ -47,10 +50,13 @@ export async function DELETE(
   const { userId } = await auth();
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
+  const householdId = await getHouseholdId(userId);
+  if (!householdId) return NextResponse.json({ error: "no_household" }, { status: 404 });
+
   const { id } = await params;
 
   try {
-    await sql`UPDATE bills SET active = false WHERE id = ${id}::uuid AND user_id = ${userId}`;
+    await sql`UPDATE bills SET active = false WHERE id = ${id}::uuid AND household_id = ${householdId}`;
     return new NextResponse(null, { status: 204 });
   } catch (e) {
     return NextResponse.json({ error: String(e) }, { status: 500 });

@@ -1,6 +1,7 @@
 import { auth } from "@clerk/nextjs/server";
 import Anthropic from "@anthropic-ai/sdk";
 import { financialTools, executeTool } from "@/lib/ai-tools";
+import { getHouseholdId } from "@/lib/household";
 import type { ChatMessage } from "@/lib/types";
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
@@ -27,6 +28,9 @@ When asked about savings per paycheck, always call suggest_savings_transfer — 
 export async function POST(req: Request) {
   const { userId } = await auth();
   if (!userId) return new Response("Unauthorized", { status: 401 });
+
+  const householdId = await getHouseholdId(userId);
+  if (!householdId) return new Response("No household", { status: 404 });
 
   const { messages, selectedMonth }: { messages: ChatMessage[]; selectedMonth?: string } = await req.json();
 
@@ -74,7 +78,7 @@ export async function POST(req: Request) {
                 content: await executeTool(
                   block.name,
                   block.input as Record<string, unknown>,
-                  userId
+                  householdId
                 ).catch((e) => {
                   console.error(`[chat] tool "${block.name}" threw:`, e);
                   return JSON.stringify({ error: String(e) });

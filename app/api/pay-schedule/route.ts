@@ -1,6 +1,7 @@
 import { auth } from "@clerk/nextjs/server";
 import { NextResponse } from "next/server";
 import sql from "@/lib/db";
+import { getHouseholdId } from "@/lib/household";
 import { computePayDates, type PaySchedule } from "@/lib/pay-schedule";
 import type { PayScheduleInput } from "@/lib/types";
 
@@ -8,14 +9,14 @@ export async function GET() {
   const { userId } = await auth();
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
+  const householdId = await getHouseholdId(userId);
+  if (!householdId) return NextResponse.json({ error: "no_household" }, { status: 404 });
+
   try {
     const schedules = await sql<PaySchedule[]>`
-      SELECT * FROM pay_schedules WHERE user_id = ${userId} ORDER BY created_at ASC
+      SELECT * FROM pay_schedules WHERE household_id = ${householdId} ORDER BY created_at ASC
     `;
-
-    return NextResponse.json(
-      schedules.map((s) => ({ ...s, ...computePayDates(s) }))
-    );
+    return NextResponse.json(schedules.map((s) => ({ ...s, ...computePayDates(s) })));
   } catch (e) {
     return NextResponse.json({ error: String(e) }, { status: 500 });
   }
@@ -25,13 +26,17 @@ export async function POST(req: Request) {
   const { userId } = await auth();
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
+  const householdId = await getHouseholdId(userId);
+  if (!householdId) return NextResponse.json({ error: "no_household" }, { status: 404 });
+
   const body: PayScheduleInput = await req.json();
 
   try {
     const [schedule] = await sql<PaySchedule[]>`
-      INSERT INTO pay_schedules (user_id, name, amount, frequency, anchor_date, pay_day_1, pay_day_2, end_date)
+      INSERT INTO pay_schedules (user_id, household_id, name, amount, frequency, anchor_date, pay_day_1, pay_day_2, end_date)
       VALUES (
         ${userId},
+        ${householdId},
         ${body.name},
         ${body.amount},
         ${body.frequency},
@@ -42,7 +47,6 @@ export async function POST(req: Request) {
       )
       RETURNING *
     `;
-
     return NextResponse.json({ ...schedule, ...computePayDates(schedule) }, { status: 201 });
   } catch (e) {
     return NextResponse.json({ error: String(e) }, { status: 500 });

@@ -1,6 +1,7 @@
 import { auth } from "@clerk/nextjs/server";
 import { NextResponse } from "next/server";
 import sql from "@/lib/db";
+import { getHouseholdId } from "@/lib/household";
 
 export async function PUT(
   req: Request,
@@ -8,6 +9,9 @@ export async function PUT(
 ) {
   const { userId } = await auth();
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  const householdId = await getHouseholdId(userId);
+  if (!householdId) return NextResponse.json({ error: "no_household" }, { status: 404 });
 
   const { id } = await params;
   const body: { name?: string; amount?: number; frequency?: string } = await req.json();
@@ -23,7 +27,7 @@ export async function PUT(
   try {
     const [item] = await sql`
       UPDATE discretionary_items SET ${sql(fields)}
-      WHERE id = ${id}::uuid AND user_id = ${userId}
+      WHERE id = ${id}::uuid AND household_id = ${householdId}
       RETURNING *
     `;
     if (!item) return NextResponse.json({ error: "Not found" }, { status: 404 });
@@ -40,10 +44,13 @@ export async function DELETE(
   const { userId } = await auth();
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
+  const householdId = await getHouseholdId(userId);
+  if (!householdId) return NextResponse.json({ error: "no_household" }, { status: 404 });
+
   const { id } = await params;
 
   try {
-    await sql`UPDATE discretionary_items SET active = false WHERE id = ${id}::uuid AND user_id = ${userId}`;
+    await sql`UPDATE discretionary_items SET active = false WHERE id = ${id}::uuid AND household_id = ${householdId}`;
     return new NextResponse(null, { status: 204 });
   } catch (e) {
     return NextResponse.json({ error: String(e) }, { status: 500 });

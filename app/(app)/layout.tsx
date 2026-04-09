@@ -1,13 +1,19 @@
 import { UserButton } from "@clerk/nextjs";
+import { auth } from "@clerk/nextjs/server";
 import { NavLinks } from "@/components/NavLinks";
 import { MonthProvider, MonthBar } from "@/components/MonthContext";
 import { ChatProvider } from "@/components/ChatContext";
+import { HouseholdGate } from "@/components/HouseholdGate";
+import { getHouseholdId } from "@/lib/household";
 
-export default function DashboardLayout({
+export default async function DashboardLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
+  const { userId } = await auth();
+  const householdId = userId ? await getHouseholdId(userId) : null;
+
   return (
     <MonthProvider>
     <ChatProvider>
@@ -18,7 +24,9 @@ export default function DashboardLayout({
         </header>
         <MonthBar />
         <main className="flex-1 flex flex-col px-4 py-6 max-w-2xl lg:max-w-5xl mx-auto w-full overflow-x-hidden">
-          {children}
+          <HouseholdGate hasHousehold={!!householdId}>
+            {children}
+          </HouseholdGate>
         </main>
       </div>
     </ChatProvider>
