@@ -5,9 +5,9 @@ import { usePathname } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 
 const links = [
-  { href: "/",                     label: "Overview",  exact: true },
+  { href: "/overview",             label: "Overview",  exact: true },
   { href: "/income",               label: "Income" },
-  { href: "/bills",                label: "Bills" },
+  { href: "/expenses",             label: "Expenses" },
   { href: "/calendar",             label: "Calendar" },
   { href: "/ask",                  label: "Ask AI" },
 ];

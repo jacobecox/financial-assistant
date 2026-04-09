@@ -12,7 +12,7 @@ function HouseholdIcon() {
 
 export function AccountButton() {
   return (
-    <UserButton afterSignOutUrl="/landing">
+    <UserButton afterSignOutUrl="/">
       <UserButton.MenuItems>
         <UserButton.Link
           label="Household"

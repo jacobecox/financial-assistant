@@ -704,7 +704,7 @@ function SortableCategoryCard({
 
 // ── Page ──────────────────────────────────────────────────────────────────────
 
-export default function BillsPage() {
+export default function ExpensesPage() {
   const [bills, setBills] = useState<Bill[]>([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
@@ -808,8 +808,10 @@ export default function BillsPage() {
 
   return (
     <div className="space-y-6">
+      <h1 className="text-2xl font-bold tracking-tight">Expenses</h1>
+
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold tracking-tight">Bills</h1>
+        <h2 className="text-xl font-bold">Bills</h2>
         {!showForm && !editing && (
           <button onClick={() => setShowForm(true)} className={btn.primarySm}>
             + Add Bill

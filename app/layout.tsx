@@ -27,7 +27,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <ClerkProvider signInFallbackRedirectUrl="/" afterSignOutUrl="/sign-in">
+    <ClerkProvider signInFallbackRedirectUrl="/overview" afterSignOutUrl="/">
       <html lang="en">
         <body className="bg-slate-950 text-slate-50 antialiased overflow-x-hidden">{children}</body>
       </html>
