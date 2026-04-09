@@ -2,6 +2,7 @@ import { auth } from "@/lib/auth";
 import Anthropic from "@anthropic-ai/sdk";
 import { financialTools, executeTool } from "@/lib/ai-tools";
 import { getHouseholdId } from "@/lib/household";
+import { checkRateLimit } from "@/lib/rate-limit";
 import type { ChatMessage } from "@/lib/types";
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
@@ -31,6 +32,25 @@ export async function POST(req: Request) {
 
   const householdId = await getHouseholdId(userId);
   if (!householdId) return new Response("No household", { status: 404 });
+
+  const rateLimit = await checkRateLimit(userId);
+  if (!rateLimit.allowed) {
+    return Response.json(
+      {
+        error: "rate_limited",
+        message: `You've used all ${rateLimit.limit} AI messages for today. Your limit resets at ${rateLimit.resetAt.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", timeZoneName: "short" })}.`,
+        resetAt: rateLimit.resetAt.toISOString(),
+      },
+      {
+        status: 429,
+        headers: {
+          "X-RateLimit-Limit": String(rateLimit.limit),
+          "X-RateLimit-Remaining": "0",
+          "X-RateLimit-Reset": rateLimit.resetAt.toISOString(),
+        },
+      }
+    );
+  }
 
   const { messages, selectedMonth }: { messages: ChatMessage[]; selectedMonth?: string } = await req.json();
 

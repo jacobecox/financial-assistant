@@ -78,6 +78,16 @@ export default function AskPage() {
         body: JSON.stringify({ messages: history, selectedMonth: monthLabel }),
       });
 
+      if (res.status === 429) {
+        const { message } = await res.json();
+        setMessages((prev: Message[]) => [
+          ...prev,
+          { role: "assistant", content: message ?? "You've reached your daily AI message limit. Please try again tomorrow." },
+        ]);
+        setLoading(false);
+        return;
+      }
+
       if (!res.ok || !res.body) throw new Error("Request failed");
 
       const reader = res.body.getReader();
