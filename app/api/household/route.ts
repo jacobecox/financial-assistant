@@ -11,13 +11,13 @@ export async function GET() {
   const householdId = await getHouseholdId(userId);
   if (!householdId) return NextResponse.json({ error: "no_household" }, { status: 404 });
 
-  const [household] = await sql<{ id: string; name: string }[]>`
+  const [household] = (await sql`
     SELECT id, name FROM households WHERE id = ${householdId}
-  `;
+  `) as unknown as { id: string; name: string }[];
 
-  const members = await sql<{ user_id: string; role: string; joined_at: string }[]>`
+  const members = (await sql`
     SELECT user_id, role, joined_at FROM household_members WHERE household_id = ${householdId}
-  `;
+  `) as unknown as { user_id: string; role: string; joined_at: string }[];
 
   const client = await clerkClient();
   const enriched = await Promise.all(
@@ -46,14 +46,14 @@ export async function POST(req: Request) {
 
   const { name = "My Household" } = await req.json().catch(() => ({}));
 
-  const [household] = await sql<{ id: string }[]>`
+  const [household] = (await sql`
     WITH h AS (
       INSERT INTO households (name) VALUES (${name}) RETURNING id
     )
     INSERT INTO household_members (user_id, household_id, role)
     SELECT ${userId}, id, 'owner' FROM h
     RETURNING household_id AS id
-  `;
+  `) as unknown as { id: string }[];
 
   invalidateHouseholdCache(userId);
   return NextResponse.json({ householdId: household.id }, { status: 201 });

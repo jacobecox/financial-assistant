@@ -19,7 +19,7 @@ export async function PUT(
   const body: PayScheduleInput = await req.json();
 
   try {
-    const [schedule] = await sql<PaySchedule[]>`
+    const [schedule] = (await sql`
       UPDATE pay_schedules SET
         name        = ${body.name},
         amount      = ${body.amount},
@@ -27,11 +27,11 @@ export async function PUT(
         anchor_date = ${body.anchor_date},
         pay_day_1   = ${body.pay_day_1 ?? null},
         pay_day_2   = ${body.pay_day_2 ?? null},
-        end_date    = ${(body as Record<string, unknown>).end_date ?? null},
+        end_date    = ${body.end_date ?? null},
         updated_at  = now()
       WHERE id = ${id}::uuid AND household_id = ${householdId}
       RETURNING *
-    `;
+    `) as unknown as PaySchedule[];
     if (!schedule) return NextResponse.json({ error: "Not found" }, { status: 404 });
     return NextResponse.json({ ...schedule, ...computePayDates(schedule) });
   } catch (e) {

@@ -54,6 +54,7 @@ export interface PayScheduleInput {
   anchor_date: string;
   pay_day_1?: number;
   pay_day_2?: number;
+  end_date?: string | null;
 }
 
 export interface ChatMessage {

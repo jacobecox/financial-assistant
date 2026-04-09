@@ -14,14 +14,10 @@ export async function POST(
   const { token } = await params;
 
   // Validate the token
-  const [invite] = await sql<{
-    household_id: string;
-    expires_at: string;
-    used_at: string | null;
-  }[]>`
+  const [invite] = (await sql`
     SELECT household_id, expires_at, used_at
     FROM household_invites WHERE token = ${token}
-  `;
+  `) as unknown as { household_id: string; expires_at: string; used_at: string | null }[];
 
   if (!invite) return NextResponse.json({ error: "not_found" }, { status: 404 });
   if (invite.used_at) return NextResponse.json({ error: "already_used" }, { status: 409 });

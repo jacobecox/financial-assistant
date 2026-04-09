@@ -11,7 +11,7 @@ COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 # Env vars are injected at runtime via Control Plane workload config;
 # provide placeholders so Next.js can build without real values.
-ENV NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=placeholder
+ENV NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=pk_test_placeholder
 RUN npm run build
 
 FROM node:23-alpine AS runner

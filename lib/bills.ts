@@ -11,7 +11,7 @@ export interface BillDateInfo {
   frequency: BillFrequency;
   due_day: number | null;    // day of month — used by monthly and semi_monthly (first day)
   due_day_2: number | null;  // second day of month — used by semi_monthly only
-  anchor_date: string | null; // known past due date — used by all non-monthly/semi_monthly
+  anchor_date: string | Date | null; // known past due date — used by all non-monthly/semi_monthly
   amount: number;
 }
 

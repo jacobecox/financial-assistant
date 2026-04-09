@@ -13,9 +13,9 @@ export async function GET() {
   if (!householdId) return NextResponse.json({ error: "no_household" }, { status: 404 });
 
   try {
-    const schedules = await sql<PaySchedule[]>`
+    const schedules = (await sql`
       SELECT * FROM pay_schedules WHERE household_id = ${householdId} ORDER BY created_at ASC
-    `;
+    `) as unknown as PaySchedule[];
     return NextResponse.json(schedules.map((s) => ({ ...s, ...computePayDates(s) })));
   } catch (e) {
     return NextResponse.json({ error: String(e) }, { status: 500 });
@@ -32,7 +32,7 @@ export async function POST(req: Request) {
   const body: PayScheduleInput = await req.json();
 
   try {
-    const [schedule] = await sql<PaySchedule[]>`
+    const [schedule] = (await sql`
       INSERT INTO pay_schedules (user_id, household_id, name, amount, frequency, anchor_date, pay_day_1, pay_day_2, end_date)
       VALUES (
         ${userId},
@@ -43,10 +43,10 @@ export async function POST(req: Request) {
         ${body.anchor_date},
         ${body.pay_day_1 ?? null},
         ${body.pay_day_2 ?? null},
-        ${(body as Record<string, unknown>).end_date ?? null}
+        ${body.end_date ?? null}
       )
       RETURNING *
-    `;
+    `) as unknown as PaySchedule[];
     return NextResponse.json({ ...schedule, ...computePayDates(schedule) }, { status: 201 });
   } catch (e) {
     return NextResponse.json({ error: String(e) }, { status: 500 });

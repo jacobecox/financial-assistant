@@ -100,10 +100,10 @@ export async function executeTool(
     case "get_upcoming_bills": {
       const beforeDate = toolInput.before_date as string;
       const cutoff = new Date(beforeDate);
-      const bills = await sql<(BillDateInfo & { name: string })[]>`
+      const bills = (await sql`
         SELECT name, amount, frequency, due_day, due_day_2, anchor_date FROM bills
         WHERE user_id = ${householdId} AND active = true
-      `;
+      `) as unknown as (BillDateInfo & { name: string })[];
 
       const upcoming = bills
         .map((b) => ({ ...b, next_due: computeNextDueDate(b) }))
@@ -122,9 +122,9 @@ export async function executeTool(
     }
 
     case "get_current_paycheck": {
-      const schedules = await sql<PaySchedule[]>`
+      const schedules = (await sql`
         SELECT * FROM pay_schedules WHERE user_id = ${householdId} ORDER BY created_at ASC
-      `;
+      `) as unknown as PaySchedule[];
       if (!schedules.length) return JSON.stringify({ error: "No pay schedules set up" });
 
       const result = schedules.map((s) => ({
@@ -138,10 +138,10 @@ export async function executeTool(
     }
 
     case "get_expenses_summary": {
-      const bills = await sql<(BillDateInfo & { name: string })[]>`
+      const bills = (await sql`
         SELECT name, amount, frequency, due_day, due_day_2, anchor_date FROM bills
         WHERE user_id = ${householdId} AND active = true AND recurring = true
-      `;
+      `) as unknown as (BillDateInfo & { name: string })[];
       const total = bills.reduce((sum: number, b: BillDateInfo) => sum + monthlyEquivalent(b), 0);
       return JSON.stringify({
         bills: bills.map((b) => ({ name: b.name, amount: Number(b.amount), frequency: b.frequency, monthly_equivalent: monthlyEquivalent(b) })),
@@ -151,21 +151,21 @@ export async function executeTool(
 
     case "get_income_summary": {
       const since = toolInput.since as string;
-      const entries = await sql<{ source: string; amount: number; date: string; notes: string | null }[]>`
+      const entries = (await sql`
         SELECT source, amount, date, notes FROM income
         WHERE user_id = ${householdId} AND date >= ${since}::date
         ORDER BY date DESC
-      `;
+      `) as unknown as { source: string; amount: number; date: string; notes: string | null }[];
       const total = entries.reduce((sum: number, e: { amount: number }) => sum + Number(e.amount), 0);
       return JSON.stringify({ entries, total });
     }
 
     case "get_buffer_summary": {
-      const items = await sql<{ name: string; amount: number; frequency: string }[]>`
+      const items = (await sql`
         SELECT name, amount, frequency FROM discretionary_items
         WHERE user_id = ${householdId} AND active = true
         ORDER BY created_at ASC
-      `;
+      `) as unknown as { name: string; amount: number; frequency: string }[];
       const total = items.reduce((sum, d) => sum + Number(d.amount), 0);
       return JSON.stringify({
         items: items.map((d) => ({ name: d.name, amount: Number(d.amount), frequency: d.frequency })),
@@ -177,41 +177,41 @@ export async function executeTool(
     case "get_planned_expenses": {
       const year  = toolInput.year  as number;
       const month = toolInput.month as number; // 1-indexed
-      const rows = await sql<{ name: string; amount: number; planned_date: string; notes: string | null }[]>`
+      const rows = (await sql`
         SELECT name, amount, planned_date, notes FROM planned_expenses
         WHERE user_id = ${householdId}
           AND active = true
           AND EXTRACT(year  FROM planned_date) = ${year}
           AND EXTRACT(month FROM planned_date) = ${month}
         ORDER BY planned_date ASC
-      `;
+      `) as unknown as { name: string; amount: number; planned_date: string; notes: string | null }[];
       const total = rows.reduce((sum, r) => sum + Number(r.amount), 0);
       return JSON.stringify({ expenses: rows, total_planned: total });
     }
 
     case "suggest_savings_transfer": {
-      const schedules = await sql<PaySchedule[]>`
+      const schedules = (await sql`
         SELECT * FROM pay_schedules WHERE user_id = ${householdId} ORDER BY created_at ASC
-      `;
+      `) as unknown as PaySchedule[];
       if (!schedules.length) return JSON.stringify({ error: "No pay schedules set up" });
 
-      const allBills = await sql<(BillDateInfo & { name: string })[]>`
+      const allBills = (await sql`
         SELECT name, amount, frequency, due_day, due_day_2, anchor_date FROM bills
         WHERE user_id = ${householdId} AND active = true
-      `;
+      `) as unknown as (BillDateInfo & { name: string })[];
 
-      const bufferItems = await sql<{ name: string; amount: number }[]>`
+      const bufferItems = (await sql`
         SELECT name, amount FROM discretionary_items WHERE user_id = ${householdId} AND active = true
-      `;
+      `) as unknown as { name: string; amount: number }[];
       const totalBuffer = bufferItems.reduce((sum, d) => sum + Number(d.amount), 0);
 
       const now = new Date();
-      const plannedRows = await sql<{ name: string; amount: number; planned_date: string }[]>`
+      const plannedRows = (await sql`
         SELECT name, amount, planned_date FROM planned_expenses
         WHERE user_id = ${householdId} AND active = true
           AND EXTRACT(year  FROM planned_date) = ${now.getFullYear()}
           AND EXTRACT(month FROM planned_date) = ${now.getMonth() + 1}
-      `;
+      `) as unknown as { name: string; amount: number; planned_date: string }[];
       const totalPlanned = plannedRows.reduce((sum, r) => sum + Number(r.amount), 0);
 
       // Expand each schedule into individual paycheck instances for this month
