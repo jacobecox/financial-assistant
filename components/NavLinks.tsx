@@ -10,7 +10,6 @@ const links = [
   { href: "/bills",                label: "Bills" },
   { href: "/calendar",             label: "Calendar" },
   { href: "/ask",                  label: "Ask AI" },
-  { href: "/settings/household",   label: "Household" },
 ];
 
 export function NavLinks() {
