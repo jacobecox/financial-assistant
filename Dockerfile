@@ -9,9 +9,14 @@ FROM node:23-alpine AS builder
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
-# Env vars are injected at runtime via Control Plane workload config;
-# provide placeholders so Next.js can build without real values.
-ENV NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=pk_test_placeholder
+ARG NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY
+ARG NEXT_PUBLIC_APP_URL
+ENV NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=$NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY
+ENV NEXT_PUBLIC_APP_URL=$NEXT_PUBLIC_APP_URL
+ENV NEXT_PUBLIC_CLERK_SIGN_IN_URL=/sign-in
+ENV NEXT_PUBLIC_CLERK_SIGN_UP_URL=/sign-up
+ENV NEXT_PUBLIC_CLERK_AFTER_SIGN_IN_URL=/
+ENV NEXT_PUBLIC_CLERK_AFTER_SIGN_UP_URL=/
 RUN npm run build
 
 FROM node:23-alpine AS runner
