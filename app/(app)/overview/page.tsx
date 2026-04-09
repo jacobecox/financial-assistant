@@ -254,9 +254,11 @@ export default function OverviewPage() {
   const [discretionary, setDiscretionary] = useState<DiscretionaryItem[]>([]);
   const [planned, setPlanned]           = useState<PlannedExpense[]>([]);
   const [loading, setLoading]           = useState(true);
+  const [fetchError, setFetchError]     = useState(false);
 
   useEffect(() => {
     setLoading(true);
+    setFetchError(false);
     Promise.all([
       fetch("/api/bills").then((r) => r.json()),
       fetch("/api/pay-schedule").then((r) => r.json()),
@@ -267,6 +269,9 @@ export default function OverviewPage() {
       setSchedules(Array.isArray(s) ? s : []);
       setDiscretionary(Array.isArray(d) ? d : []);
       setPlanned(Array.isArray(p) ? p : []);
+      setLoading(false);
+    }).catch(() => {
+      setFetchError(true);
       setLoading(false);
     });
   }, [year, month]);
@@ -316,6 +321,14 @@ export default function OverviewPage() {
           <div key={i} className="h-20 rounded-xl bg-slate-800" />
         ))}
       </div>
+    );
+  }
+
+  if (fetchError) {
+    return (
+      <p className="text-sm text-rose-400">
+        Failed to load your overview. Please refresh the page.
+      </p>
     );
   }
 

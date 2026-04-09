@@ -334,10 +334,15 @@ function PlannedSection() {
   const [editing, setEditing]   = useState<PlannedExpense | null>(null);
   const [confirmId, setConfirmId] = useState<string | null>(null);
   const [saving, setSaving]     = useState(false);
+  const [error, setError]       = useState<string | null>(null);
 
   async function load() {
-    const data = await fetch(`/api/planned-expenses?year=${year}&month=${month}`).then((r) => r.json());
-    setAll(Array.isArray(data) ? data : []);
+    try {
+      const data = await fetch(`/api/planned-expenses?year=${year}&month=${month}`).then((r) => r.json());
+      setAll(Array.isArray(data) ? data : []);
+    } catch {
+      setError("Failed to load planned expenses.");
+    }
   }
 
   useEffect(() => { load(); }, [year, month]);
@@ -347,6 +352,7 @@ function PlannedSection() {
 
   async function handleSave(form: typeof EMPTY_PLANNED) {
     setSaving(true);
+    setError(null);
     try {
       if (editing) {
         const res = await fetch(`/api/planned-expenses/${editing.id}`, {
@@ -354,20 +360,29 @@ function PlannedSection() {
           body: JSON.stringify({ name: form.name, amount: parseFloat(form.amount), planned_date: form.planned_date, notes: form.notes || null }),
         });
         if (res.ok) { setEditing(null); await load(); }
+        else setError("Failed to update expense. Please try again.");
       } else {
         const res = await fetch("/api/planned-expenses", {
           method: "POST", headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ name: form.name, amount: parseFloat(form.amount), planned_date: form.planned_date, notes: form.notes || null }),
         });
         if (res.ok) { setShowForm(false); await load(); }
+        else setError("Failed to add expense. Please try again.");
       }
+    } catch {
+      setError("Something went wrong. Please try again.");
     } finally { setSaving(false); }
   }
 
   async function handleDelete(id: string) {
-    await fetch(`/api/planned-expenses/${id}`, { method: "DELETE" });
-    setConfirmId(null);
-    await load();
+    setError(null);
+    const res = await fetch(`/api/planned-expenses/${id}`, { method: "DELETE" });
+    if (res.ok) {
+      setConfirmId(null);
+      await load();
+    } else {
+      setError("Failed to delete expense. Please try again.");
+    }
   }
 
   return (
@@ -382,6 +397,13 @@ function PlannedSection() {
         )}
       </div>
     <section className={card + " space-y-3"}>
+
+      {error && (
+        <p className="text-xs text-rose-400 flex items-center gap-2">
+          {error}
+          <button onClick={() => setError(null)} className="underline hover:no-underline">Dismiss</button>
+        </p>
+      )}
 
       {showForm && (
         <div className="rounded-lg border border-orange-400/20 bg-slate-900/50 p-3">
@@ -445,29 +467,46 @@ function DiscretionarySection() {
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState<DiscretionaryItem | null>(null);
   const [confirmingId, setConfirmingId] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   async function load() {
-    const res = await fetch("/api/discretionary");
-    if (res.ok) setItems(await res.json());
+    try {
+      const res = await fetch("/api/discretionary");
+      if (res.ok) setItems(await res.json());
+      else setError("Failed to load buffer items.");
+    } catch {
+      setError("Failed to load buffer items.");
+    }
   }
 
   useEffect(() => { load(); }, []);
 
   async function handleSave(name: string, amount: number, frequency: DiscretionaryFrequency, id?: string) {
+    setError(null);
     const url = id ? `/api/discretionary/${id}` : "/api/discretionary";
     const method = id ? "PUT" : "POST";
-    const res = await fetch(url, {
-      method,
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name, amount, frequency }),
-    });
-    if (res.ok) { setShowForm(false); setEditing(null); await load(); }
+    try {
+      const res = await fetch(url, {
+        method,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name, amount, frequency }),
+      });
+      if (res.ok) { setShowForm(false); setEditing(null); await load(); }
+      else setError("Failed to save buffer item. Please try again.");
+    } catch {
+      setError("Something went wrong. Please try again.");
+    }
   }
 
   async function handleDelete(id: string) {
-    await fetch(`/api/discretionary/${id}`, { method: "DELETE" });
-    setConfirmingId(null);
-    await load();
+    setError(null);
+    const res = await fetch(`/api/discretionary/${id}`, { method: "DELETE" });
+    if (res.ok) {
+      setConfirmingId(null);
+      await load();
+    } else {
+      setError("Failed to delete buffer item. Please try again.");
+    }
   }
 
   return (
@@ -483,6 +522,13 @@ function DiscretionarySection() {
           </button>
         )}
       </div>
+
+      {error && (
+        <p className="text-xs text-rose-400 flex items-center gap-2">
+          {error}
+          <button onClick={() => setError(null)} className="underline hover:no-underline">Dismiss</button>
+        </p>
+      )}
 
       {(showForm || editing) && (
         <DiscretionaryForm
@@ -710,13 +756,20 @@ export default function ExpensesPage() {
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState<Bill | null>(null);
   const [confirmingId, setConfirmingId] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
 
   async function load() {
-    const res = await fetch("/api/bills");
-    if (res.ok) setBills(await res.json());
-    setLoading(false);
+    try {
+      const res = await fetch("/api/bills");
+      if (res.ok) setBills(await res.json());
+      else setError("Failed to load bills.");
+    } catch {
+      setError("Failed to load bills.");
+    } finally {
+      setLoading(false);
+    }
   }
 
   useEffect(() => { load(); }, []);
@@ -779,28 +832,37 @@ export default function ExpensesPage() {
   }
 
   async function handleAdd(data: BillInput) {
+    setError(null);
     const res = await fetch("/api/bills", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(data),
     });
     if (res.ok) { setShowForm(false); await load(); }
+    else setError("Failed to add bill. Please try again.");
   }
 
   async function handleEdit(data: BillInput) {
     if (!editing) return;
+    setError(null);
     const res = await fetch(`/api/bills/${editing.id}`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(data),
     });
     if (res.ok) { setEditing(null); await load(); }
+    else setError("Failed to update bill. Please try again.");
   }
 
   async function handleDelete(id: string) {
-    await fetch(`/api/bills/${id}`, { method: "DELETE" });
-    setConfirmingId(null);
-    await load();
+    setError(null);
+    const res = await fetch(`/api/bills/${id}`, { method: "DELETE" });
+    if (res.ok) {
+      setConfirmingId(null);
+      await load();
+    } else {
+      setError("Failed to delete bill. Please try again.");
+    }
   }
 
   const g = grouped(bills);
@@ -809,6 +871,13 @@ export default function ExpensesPage() {
   return (
     <div className="space-y-6">
       <h1 className="text-2xl font-bold tracking-tight">Expenses</h1>
+
+      {error && (
+        <p className="text-xs text-rose-400 flex items-center gap-2">
+          {error}
+          <button onClick={() => setError(null)} className="underline hover:no-underline">Dismiss</button>
+        </p>
+      )}
 
       <div className="flex items-center justify-between">
         <h2 className="text-xl font-bold">Bills</h2>

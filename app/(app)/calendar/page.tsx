@@ -311,6 +311,7 @@ export default function CalendarPage() {
   const [schedules, setSchedules] = useState<PaySchedule[]>([]);
   const [planned, setPlanned]     = useState<PlannedExpense[]>([]);
   const [loading, setLoading]     = useState(true);
+  const [fetchError, setFetchError] = useState(false);
 
   // Reload bills/schedules once; reload planned expenses when month changes
   useEffect(() => {
@@ -320,14 +321,15 @@ export default function CalendarPage() {
     ]).then(([b, s]) => {
       setBills(Array.isArray(b) ? b : []);
       setSchedules(Array.isArray(s) ? s : []);
-    });
+    }).catch(() => setFetchError(true));
   }, []);
 
   useEffect(() => {
     setLoading(true);
     fetch(`/api/planned-expenses?year=${year}&month=${month}`)
       .then((r) => r.json())
-      .then((p) => { setPlanned(Array.isArray(p) ? p : []); setLoading(false); });
+      .then((p) => { setPlanned(Array.isArray(p) ? p : []); setLoading(false); })
+      .catch(() => { setFetchError(true); setLoading(false); });
   }, [year, month]);
 
   // Build events map: day → events[]
@@ -365,6 +367,14 @@ export default function CalendarPage() {
   const typeOrder = { paycheck: 0, planned: 1, bill: 2 };
   for (const [day, events] of eventsByDay) {
     eventsByDay.set(day, events.sort((a, b) => typeOrder[a.type] - typeOrder[b.type]));
+  }
+
+  if (fetchError) {
+    return (
+      <p className="text-sm text-rose-400">
+        Failed to load calendar data. Please refresh the page.
+      </p>
+    );
   }
 
   return (
