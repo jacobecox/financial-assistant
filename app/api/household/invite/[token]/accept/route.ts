@@ -1,4 +1,4 @@
-import { auth } from "@clerk/nextjs/server";
+import { auth } from "@/lib/auth";
 import { NextResponse } from "next/server";
 import sql from "@/lib/db";
 import { getHouseholdId, invalidateHouseholdCache } from "@/lib/household";

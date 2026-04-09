@@ -1,4 +1,4 @@
-import { auth } from "@clerk/nextjs/server";
+import { auth } from "@/lib/auth";
 import { NavLinks } from "@/components/NavLinks";
 import { MonthProvider, MonthBar } from "@/components/MonthContext";
 import { ChatProvider } from "@/components/ChatContext";

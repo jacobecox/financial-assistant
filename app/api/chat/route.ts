@@ -1,4 +1,4 @@
-import { auth } from "@clerk/nextjs/server";
+import { auth } from "@/lib/auth";
 import Anthropic from "@anthropic-ai/sdk";
 import { financialTools, executeTool } from "@/lib/ai-tools";
 import { getHouseholdId } from "@/lib/household";

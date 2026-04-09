@@ -221,7 +221,7 @@ function UpcomingBills({ bills }: { bills: Bill[] }) {
   return (
     <div className={card + " space-y-3"}>
       <h2 className="text-xs font-semibold uppercase tracking-widest text-slate-400">Upcoming Bills · Next 14 Days</h2>
-      <ul className="space-y-2">
+      <ul className="space-y-2 max-h-52 overflow-y-auto scrollbar-hide">
         {upcoming.map((b, i) => {
           const dateStr = b.date.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
           const urgency = b.daysUntil === 0 ? "text-red-400" : b.daysUntil <= 3 ? "text-orange-400" : "text-slate-400";
