@@ -1,7 +1,7 @@
 import type Anthropic from "@anthropic-ai/sdk";
 import sql from "./db";
 import { computePayDates, type PaySchedule } from "./pay-schedule";
-import { computeNextDueDate, monthlyEquivalent, type BillDateInfo } from "./bills";
+import { computeNextDueDate, billOccurrencesInWindow, monthlyEquivalent, type BillDateInfo } from "./bills";
 import type { UpcomingBillsResult } from "./types";
 
 // Tool definitions passed to Claude
@@ -260,17 +260,18 @@ export async function executeTool(
 
       instances.sort((a, b) => a.payDate.getTime() - b.payDate.getTime());
 
-      // For each instance, find bills due in its window [payDate, nextPayDate)
+      // For each instance, find ALL bill occurrences in its window [payDate, nextPayDate)
       const paychecks = instances.map((inst) => {
-        const dueBills = allBills
-          .map((b) => ({ ...b, next_due: computeNextDueDate(b) }))
-          .filter((b) => {
-            if (!b.next_due) return false;
-            const due = new Date(b.next_due);
-            return due >= inst.payDate && due < inst.nextPayDate;
-          });
+        const dueBills = allBills.flatMap((b) => {
+          const occurrences = billOccurrencesInWindow(b, inst.payDate, inst.nextPayDate);
+          return occurrences.map((date) => ({
+            name: b.name,
+            amount: Number(b.amount),
+            due: date.toISOString().split("T")[0],
+          }));
+        });
 
-        const billsTotal = dueBills.reduce((sum, b) => sum + Number(b.amount), 0);
+        const billsTotal = dueBills.reduce((sum, b) => sum + b.amount, 0);
         const maxSavings = Math.max(0, inst.amount - billsTotal - totalBuffer);
 
         return {
@@ -278,7 +279,7 @@ export async function executeTool(
           pay_date: inst.payDate.toISOString().split("T")[0],
           next_pay_date: inst.nextPayDate.toISOString().split("T")[0],
           paycheck_amount: inst.amount,
-          bills_due_in_window: dueBills.map((b) => ({ name: b.name, amount: Number(b.amount), due: b.next_due })),
+          bills_due_in_window: dueBills,
           bills_total: billsTotal,
           buffer_reserved: totalBuffer,
           max_savings: maxSavings,

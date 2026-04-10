@@ -121,3 +121,61 @@ function addInterval(date: Date, frequency: BillFrequency): Date {
 function iso(d: Date): string {
   return d.toISOString().split("T")[0];
 }
+
+/**
+ * Returns every due date for a bill within [windowStart, windowEnd).
+ * Handles multiple occurrences — e.g. a weekly bill in a 2-week window returns 2 dates.
+ */
+export function billOccurrencesInWindow(
+  bill: BillDateInfo,
+  windowStart: Date,
+  windowEnd: Date
+): Date[] {
+  const { frequency, due_day, due_day_2, anchor_date } = bill;
+  const results: Date[] = [];
+
+  if (frequency === "semi_monthly") {
+    if (!due_day) return [];
+    const second = due_day_2 ?? (due_day <= 15 ? due_day + 15 : due_day - 15);
+    const days = [due_day, second].sort((a, b) => a - b);
+    let y = windowStart.getFullYear();
+    let m = windowStart.getMonth();
+    while (y < windowEnd.getFullYear() || (y === windowEnd.getFullYear() && m <= windowEnd.getMonth())) {
+      for (const day of days) {
+        const d = new Date(y, m, day);
+        if (d >= windowStart && d < windowEnd) results.push(d);
+      }
+      if (++m > 11) { m = 0; y++; }
+    }
+    return results;
+  }
+
+  if (frequency === "monthly") {
+    if (!due_day) return [];
+    let y = windowStart.getFullYear();
+    let m = windowStart.getMonth();
+    while (true) {
+      const d = new Date(y, m, due_day);
+      if (d >= windowEnd) break;
+      if (d >= windowStart) results.push(d);
+      if (++m > 11) { m = 0; y++; }
+    }
+    return results;
+  }
+
+  // Interval-based: weekly, biweekly, quarterly, semi_annual, annual
+  if (!anchor_date) return [];
+  const anchor = anchor_date instanceof Date
+    ? new Date(anchor_date.toISOString().slice(0, 10) + "T00:00:00")
+    : new Date(String(anchor_date).slice(0, 10) + "T00:00:00");
+
+  let cur = new Date(anchor);
+  // Fast-forward to first occurrence on or after windowStart
+  while (cur < windowStart) cur = addInterval(cur, frequency);
+  // Collect every occurrence before windowEnd
+  while (cur < windowEnd) {
+    results.push(new Date(cur));
+    cur = addInterval(cur, frequency);
+  }
+  return results;
+}
