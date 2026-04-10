@@ -67,7 +67,7 @@ export async function POST(req: Request) {
         while (true) {
           const stream = anthropic.messages.stream({
             model: "claude-sonnet-4-6",
-            max_tokens: 1024,
+            max_tokens: 4096,
             system: buildSystemPrompt(selectedMonth),
             tools: financialTools,
             messages: anthropicMessages,
