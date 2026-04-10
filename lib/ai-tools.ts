@@ -214,14 +214,16 @@ export async function executeTool(
       `) as unknown as { name: string; amount: number; planned_date: string }[];
       const totalPlanned = plannedRows.reduce((sum, r) => sum + Number(r.amount), 0);
 
-      const sideIncomeRows = (await sql`
+      const incomeTableRows = (await sql`
         SELECT source, amount, date FROM income
         WHERE household_id = ${householdId}
           AND EXTRACT(year  FROM date) = ${now.getFullYear()}
           AND EXTRACT(month FROM date) = ${now.getMonth() + 1}
         ORDER BY date ASC
       `) as unknown as { source: string | null; amount: number; date: string }[];
-      const totalSideIncome = sideIncomeRows.reduce((sum, r) => sum + Number(r.amount), 0);
+
+      const anchorToIso = (v: string | Date | null): string =>
+        v instanceof Date ? v.toISOString().slice(0, 10) : String(v).slice(0, 10);
 
       // Expand each schedule into individual paycheck instances for this month
       const y = now.getFullYear();
@@ -245,7 +247,7 @@ export async function executeTool(
           const day = s.pay_day_1!;
           instances.push({ scheduleName: s.name, amount: amt, payDate: new Date(y, m, day), nextPayDate: new Date(y, m + 1, day) });
         } else if (s.frequency === "biweekly") {
-          const anchorMs = new Date(String(s.anchor_date).slice(0, 10) + "T00:00:00").getTime();
+          const anchorMs = new Date(anchorToIso(s.anchor_date as unknown as string | Date) + "T00:00:00").getTime();
           const intervalMs = 14 * 24 * 60 * 60 * 1000;
           // Fast-forward anchor to first pay date on or after month start
           const periods = Math.ceil((monthStart.getTime() - anchorMs) / intervalMs);
@@ -259,12 +261,8 @@ export async function executeTool(
             }
             cur += intervalMs;
           }
-        } else if (s.frequency === "once") {
-          const d = new Date(String(s.anchor_date).slice(0, 10) + "T00:00:00");
-          if (d >= monthStart && d <= monthEnd) {
-            instances.push({ scheduleName: s.name, amount: amt, payDate: d, nextPayDate: monthEnd });
-          }
         }
+        // "once" schedules are side income — no bill window to assign, handled below
       }
 
       instances.sort((a, b) => a.payDate.getTime() - b.payDate.getTime());
@@ -296,13 +294,32 @@ export async function executeTool(
         };
       });
 
-      return JSON.stringify({
-        paychecks,
-        side_income: sideIncomeRows.map((r) => ({
+      // Side income = one-time pay schedule entries + income table entries for the month
+      const onceSchedules = schedules
+        .filter((s) => s.frequency === "once" && s.anchor_date)
+        .filter((s) => {
+          const d = new Date(anchorToIso(s.anchor_date as string | Date) + "T00:00:00");
+          return d >= monthStart && d <= monthEnd;
+        })
+        .map((s) => ({
+          source: s.name,
+          amount: Number(s.amount),
+          date: anchorToIso(s.anchor_date as string | Date),
+        }));
+
+      const sideIncome = [
+        ...onceSchedules,
+        ...incomeTableRows.map((r) => ({
           source: r.source ?? "Side Income",
           amount: Number(r.amount),
           date: String(r.date).slice(0, 10),
         })),
+      ];
+      const totalSideIncome = sideIncome.reduce((sum, r) => sum + r.amount, 0);
+
+      return JSON.stringify({
+        paychecks,
+        side_income: sideIncome,
         total_side_income: totalSideIncome,
         planned_expenses_this_month: plannedRows.map((r) => ({ name: r.name, amount: Number(r.amount), date: r.planned_date })),
         total_planned: totalPlanned,
