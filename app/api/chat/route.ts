@@ -23,7 +23,10 @@ The formula for max savings per paycheck is:
 - "bills_due_in_window" = bills due on or after this paycheck date and before the next paycheck date. A bill due on the same day as a paycheck is paid from that paycheck, not the previous one.
 - Planned one-time expenses reduce savings for that month but are spread across both paychecks.
 
-When asked about savings per paycheck, always call suggest_savings_transfer — it runs this exact math and returns a per-paycheck breakdown. Do not estimate or use a percentage heuristic.`;
+When asked about savings per paycheck, always call suggest_savings_transfer — it runs this exact math and returns a per-paycheck breakdown. Do not estimate or use a percentage heuristic.
+
+## Income sources
+Always include ALL income when calculating savings — both regular paychecks and side income (freelance, gigs, one-time payments). The suggest_savings_transfer tool returns a side_income array and total_side_income for the month. Add this to the paycheck savings totals unless the user explicitly asks to exclude it.`;
 }
 
 export async function POST(req: Request) {

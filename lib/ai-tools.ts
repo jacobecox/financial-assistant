@@ -214,6 +214,15 @@ export async function executeTool(
       `) as unknown as { name: string; amount: number; planned_date: string }[];
       const totalPlanned = plannedRows.reduce((sum, r) => sum + Number(r.amount), 0);
 
+      const sideIncomeRows = (await sql`
+        SELECT source, amount, date FROM income
+        WHERE household_id = ${householdId}
+          AND EXTRACT(year  FROM date) = ${now.getFullYear()}
+          AND EXTRACT(month FROM date) = ${now.getMonth() + 1}
+        ORDER BY date ASC
+      `) as unknown as { source: string | null; amount: number; date: string }[];
+      const totalSideIncome = sideIncomeRows.reduce((sum, r) => sum + Number(r.amount), 0);
+
       // Expand each schedule into individual paycheck instances for this month
       const y = now.getFullYear();
       const m = now.getMonth(); // 0-indexed
@@ -289,9 +298,15 @@ export async function executeTool(
 
       return JSON.stringify({
         paychecks,
+        side_income: sideIncomeRows.map((r) => ({
+          source: r.source ?? "Side Income",
+          amount: Number(r.amount),
+          date: String(r.date).slice(0, 10),
+        })),
+        total_side_income: totalSideIncome,
         planned_expenses_this_month: plannedRows.map((r) => ({ name: r.name, amount: Number(r.amount), date: r.planned_date })),
         total_planned: totalPlanned,
-        note: "max_savings = paycheck_amount - bills_due_in_window - buffer_reserved. Planned expenses shown for context — factor them into the paycheck(s) closest to their due date.",
+        note: "max_savings = paycheck_amount - bills_due_in_window - buffer_reserved. Always add total_side_income to total paycheck savings for the full monthly savings capacity. Planned expenses shown for context — factor them into the paycheck(s) closest to their due date.",
       });
     }
 
