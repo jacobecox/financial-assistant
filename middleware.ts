@@ -11,6 +11,9 @@ const isPublicRoute = createRouteMatcher([
 
 export default clerkMiddleware(async (auth, req) => {
   if (process.env.NODE_ENV === "development") return;
+  // Chat route handles its own auth and streams a response — middleware must
+  // not intercept it or Clerk will buffer the stream and cut it off.
+  if (req.nextUrl.pathname === "/api/chat") return;
   if (!isPublicRoute(req)) {
     const { userId } = await auth();
     if (!userId) {

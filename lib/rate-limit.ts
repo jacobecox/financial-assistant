@@ -3,23 +3,7 @@ import sql from "@/lib/db";
 const DAILY_LIMIT = 20;
 const WINDOW_MS = 24 * 60 * 60 * 1000; // 24 hours in ms
 
-// Create the table once per process — idempotent so it's safe to re-run
-let tableReady = false;
-async function ensureTable() {
-  if (tableReady) return;
-  await sql`
-    CREATE TABLE IF NOT EXISTS chat_rate_limits (
-      id        BIGSERIAL PRIMARY KEY,
-      user_id   TEXT        NOT NULL,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    )
-  `;
-  await sql`
-    CREATE INDEX IF NOT EXISTS idx_chat_rate_limits_user_created
-      ON chat_rate_limits (user_id, created_at)
-  `;
-  tableReady = true;
-}
+// Table is created once via migration — no runtime check needed
 
 export interface RateLimitResult {
   allowed: boolean;
@@ -30,7 +14,6 @@ export interface RateLimitResult {
 }
 
 export async function checkRateLimit(userId: string): Promise<RateLimitResult> {
-  await ensureTable();
 
   const windowStart = new Date(Date.now() - WINDOW_MS);
 

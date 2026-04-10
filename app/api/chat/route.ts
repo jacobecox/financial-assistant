@@ -61,17 +61,29 @@ export async function POST(req: Request) {
 
   const encoder = new TextEncoder();
 
+  // Abort the entire stream if it takes longer than 90 seconds
+  const abort = new AbortController();
+  const timeout = setTimeout(() => abort.abort(), 90_000);
+
   const readable = new ReadableStream({
     async start(controller) {
       try {
-        while (true) {
-          const stream = anthropic.messages.stream({
-            model: "claude-sonnet-4-6",
-            max_tokens: 4096,
-            system: buildSystemPrompt(selectedMonth),
-            tools: financialTools,
-            messages: anthropicMessages,
-          });
+        const MAX_TOOL_LOOPS = 10;
+        let loops = 0;
+
+        while (loops < MAX_TOOL_LOOPS) {
+          loops++;
+
+          const stream = anthropic.messages.stream(
+            {
+              model: "claude-sonnet-4-6",
+              max_tokens: 4096,
+              system: buildSystemPrompt(selectedMonth),
+              tools: financialTools,
+              messages: anthropicMessages,
+            },
+            { signal: abort.signal }
+          );
 
           // Forward text chunks to the client in real-time.
           // Tool-use responses produce no text, so this is safe to stream unconditionally.
@@ -112,14 +124,24 @@ export async function POST(req: Request) {
           }
         }
       } catch (err) {
-        controller.error(err);
+        const message = abort.signal.aborted
+          ? "\n\n_Response timed out. Please try again._"
+          : "\n\n_Something went wrong. Please try again._";
+        controller.enqueue(encoder.encode(message));
       } finally {
+        clearTimeout(timeout);
         controller.close();
       }
     },
   });
 
   return new Response(readable, {
-    headers: { "Content-Type": "text/plain; charset=utf-8" },
+    headers: {
+      "Content-Type": "text/plain; charset=utf-8",
+      // Prevent reverse proxies (nginx, CDN) from buffering the stream
+      "X-Accel-Buffering": "no",
+      "Cache-Control": "no-cache, no-transform",
+      "Connection": "keep-alive",
+    },
   });
 }
