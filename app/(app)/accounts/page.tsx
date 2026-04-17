@@ -18,6 +18,7 @@ type PlaidAccount = {
   available_balance: number | null;
   institution_name: string;
   institution_id: string;
+  error_code: string | null;
   updated_at: string;
 };
 
@@ -65,14 +66,18 @@ function AccountRow({ account }: { account: PlaidAccount }) {
   );
 }
 
-function AccountGroup({ label, accent, accounts }: { label: string; accent: string; accounts: PlaidAccount[] }) {
+function AccountGroup({ label, accent, accounts, liability = false }: {
+  label: string; accent: string; accounts: PlaidAccount[]; liability?: boolean;
+}) {
   if (accounts.length === 0) return null;
   const total = accounts.reduce((s, a) => s + Number(a.current_balance ?? 0), 0);
   return (
     <div className={`${card} border-l-2 ${accent}`}>
       <div className="flex items-center justify-between mb-3">
         <p className="text-xs font-semibold uppercase tracking-widest text-slate-400">{label}</p>
-        <p className="text-base font-semibold text-slate-200 tabular-nums">{fmt(total)}</p>
+        <p className={`text-base font-semibold tabular-nums ${liability ? "text-red-400" : "text-slate-200"}`}>
+          {liability ? "-" : ""}{fmt(total)}
+        </p>
       </div>
       <div>{accounts.map((a) => <AccountRow key={a.plaid_account_id} account={a} />)}</div>
     </div>
@@ -115,6 +120,49 @@ function PlaidLinkButton({ onSuccess }: { onSuccess: () => void }) {
       className="px-4 py-2 rounded-lg bg-emerald-600 text-white text-sm font-medium hover:bg-emerald-700 transition-colors disabled:opacity-60"
     >
       {loading ? "Loading…" : "+ Link Account"}
+    </button>
+  );
+}
+
+function ReconnectButton({ itemId, onSuccess }: { itemId: string; onSuccess: () => void }) {
+  const [linkToken, setLinkToken] = useState<string | null>(null);
+  const [loading, setLoading]     = useState(false);
+
+  const fetchToken = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res  = await fetch("/api/plaid/update-link-token", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ plaid_item_id: itemId }),
+      });
+      const data = await res.json();
+      setLinkToken(data.link_token);
+    } finally {
+      setLoading(false);
+    }
+  }, [itemId]);
+
+  const handleSuccess = useCallback(async () => {
+    // Re-auth refreshes the existing access token server-side — just clear error + reload
+    await fetch("/api/plaid/sync", { method: "POST" });
+    onSuccess();
+  }, [onSuccess]);
+
+  const { open, ready } = usePlaidLink({
+    token: linkToken ?? "",
+    onSuccess: handleSuccess,
+  });
+
+  useEffect(() => { if (linkToken && ready) open(); }, [linkToken, ready, open]);
+
+  return (
+    <button
+      onClick={fetchToken}
+      disabled={loading}
+      className="text-xs font-medium text-amber-400 hover:text-amber-300 transition-colors disabled:opacity-60"
+    >
+      {loading ? "Loading…" : "Reconnect"}
     </button>
   );
 }
@@ -204,15 +252,20 @@ export default function AccountsPage() {
   const checking    = accounts.filter((a) => a.subtype === "checking");
   const savings     = accounts.filter((a) => ["savings", "money market", "cd"].includes(a.subtype ?? ""));
   const investments = accounts.filter((a) => a.type === "investment" || a.type === "brokerage");
+  const liabilities = accounts.filter((a) => a.type === "credit" || a.type === "loan");
   const other       = accounts.filter(
-    (a) => !checking.includes(a) && !savings.includes(a) && !investments.includes(a)
+    (a) => !checking.includes(a) && !savings.includes(a) && !investments.includes(a) && !liabilities.includes(a)
   );
 
-  const netWorth = accounts.reduce((s, a) => s + Number(a.current_balance ?? 0), 0);
+  // Liabilities are positive numbers from Plaid representing what you owe — subtract from net worth
+  const assets      = accounts.filter((a) => !liabilities.includes(a));
+  const totalAssets = assets.reduce((s, a) => s + Number(a.current_balance ?? 0), 0);
+  const totalDebt   = liabilities.reduce((s, a) => s + Number(a.current_balance ?? 0), 0);
+  const netWorth    = totalAssets - totalDebt;
 
   const institutions = Object.values(
-    accounts.reduce<Record<string, { itemId: string; name: string }>>((acc, a) => {
-      if (!acc[a.plaid_item_id]) acc[a.plaid_item_id] = { itemId: a.plaid_item_id, name: a.institution_name };
+    accounts.reduce<Record<string, { itemId: string; name: string; errorCode: string | null }>>((acc, a) => {
+      if (!acc[a.plaid_item_id]) acc[a.plaid_item_id] = { itemId: a.plaid_item_id, name: a.institution_name, errorCode: a.error_code };
       return acc;
     }, {})
   );
@@ -343,6 +396,7 @@ export default function AccountsPage() {
               <AccountGroup label="Savings"     accent="border-emerald-500" accounts={savings} />
               <AccountGroup label="Investments" accent="border-purple-500"  accounts={investments} />
               <AccountGroup label="Other"       accent="border-slate-500"   accounts={other} />
+              <AccountGroup label="Credit & Loans" accent="border-red-500"  accounts={liabilities} liability />
             </div>
 
             <div className="w-full lg:w-80 shrink-0">
@@ -373,16 +427,26 @@ export default function AccountsPage() {
                 )}
 
                 <div className="space-y-2">
-                  {institutions.map(({ itemId, name }) => (
-                    <div key={itemId} className="flex items-center justify-between py-2 px-3 rounded-lg bg-slate-700/50">
-                      <p className="text-sm text-slate-200">{name}</p>
-                      <button
-                        onClick={() => setConfirmUnlink({ itemId, name })}
-                        disabled={!!unlinking}
-                        className="text-xs text-red-400 hover:text-red-300 transition-colors disabled:opacity-40"
-                      >
-                        Unlink
-                      </button>
+                  {institutions.map(({ itemId, name, errorCode }) => (
+                    <div key={itemId} className={`px-3 py-2 rounded-lg ${errorCode ? "bg-amber-500/10 ring-1 ring-amber-500/30" : "bg-slate-700/50"}`}>
+                      <div className="flex items-center justify-between">
+                        <p className="text-sm text-slate-200">{name}</p>
+                        <div className="flex items-center gap-3">
+                          {errorCode && (
+                            <ReconnectButton itemId={itemId} onSuccess={loadAccounts} />
+                          )}
+                          <button
+                            onClick={() => setConfirmUnlink({ itemId, name })}
+                            disabled={!!unlinking}
+                            className="text-xs text-red-400 hover:text-red-300 transition-colors disabled:opacity-40"
+                          >
+                            Unlink
+                          </button>
+                        </div>
+                      </div>
+                      {errorCode && (
+                        <p className="text-xs text-amber-400 mt-1">Reconnection required — tap to restore access.</p>
+                      )}
                     </div>
                   ))}
                 </div>
