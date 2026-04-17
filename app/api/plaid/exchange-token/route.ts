@@ -20,7 +20,14 @@ export async function POST(req: NextRequest) {
   const accountsResponse = await plaidClient.accountsGet({ access_token });
   const accounts = accountsResponse.data.accounts;
 
-  // Upsert the item (institution connection)
+  // Remove any existing item for this institution to avoid duplicate accounts
+  // (re-linking creates a new item_id with new account IDs; old ones must be cleaned up)
+  await sql`
+    DELETE FROM plaid_items
+    WHERE household_id = ${householdId} AND institution_id = ${institution_id} AND plaid_item_id != ${item_id}
+  `;
+
+  // Insert the new item
   await sql`
     INSERT INTO plaid_items (household_id, plaid_item_id, plaid_access_token, institution_id, institution_name)
     VALUES (${householdId}, ${item_id}, ${access_token}, ${institution_id}, ${institution_name})
@@ -42,7 +49,8 @@ export async function POST(req: NextRequest) {
         ${acct.type}, ${acct.subtype ?? null}, ${acct.mask ?? null}
       )
       ON CONFLICT (plaid_account_id) DO UPDATE
-        SET name          = EXCLUDED.name,
+        SET plaid_item_id = EXCLUDED.plaid_item_id,
+            name          = EXCLUDED.name,
             official_name = EXCLUDED.official_name,
             subtype       = EXCLUDED.subtype,
             updated_at    = NOW()
