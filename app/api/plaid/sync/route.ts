@@ -13,6 +13,21 @@ export async function POST() {
   const householdId = await getHouseholdId(userId);
   if (!householdId) return NextResponse.json({ error: "No household" }, { status: 400 });
 
+  // Rate limit: 5 syncs per 15-minute window per household
+  const WINDOW_MS  = 15 * 60 * 1000;
+  const SYNC_LIMIT = 5;
+  const windowStart = new Date(Date.now() - WINDOW_MS);
+  const [{ count }] = await sql<[{ count: number }]>`
+    SELECT COUNT(*)::int AS count FROM plaid_sync_log
+    WHERE household_id = ${householdId} AND synced_at > ${windowStart}
+  `;
+  if (count >= SYNC_LIMIT) {
+    return NextResponse.json(
+      { error: "Too many syncs", retry_after_minutes: 15 },
+      { status: 429 }
+    );
+  }
+
   const items = await sql<{ plaid_item_id: string; plaid_access_token: string }[]>`
     SELECT plaid_item_id, plaid_access_token FROM plaid_items WHERE household_id = ${householdId}
   `;
@@ -54,6 +69,10 @@ export async function POST() {
       errors.push({ institution: institution_name, error: code });
     }
   }
+
+  // Log this sync and clean up entries older than the window
+  await sql`INSERT INTO plaid_sync_log (household_id) VALUES (${householdId})`;
+  sql`DELETE FROM plaid_sync_log WHERE synced_at < NOW() - INTERVAL '15 minutes'`.catch(() => {});
 
   return NextResponse.json({ ok: true, accounts_synced: synced, errors });
 }

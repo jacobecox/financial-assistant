@@ -223,7 +223,15 @@ export default function AccountsPage() {
   const handleSync = async () => {
     setSyncing(true);
     try {
-      await fetch("/api/plaid/sync", { method: "POST" });
+      const res  = await fetch("/api/plaid/sync", { method: "POST" });
+      const data = await res.json();
+      if (res.status === 429) {
+        setError(`Already synced recently. Try again in ${data.retry_after_minutes} minute${data.retry_after_minutes !== 1 ? "s" : ""}.`);
+        return;
+      }
+      if (data.errors?.length) {
+        setError(`Sync issue with: ${data.errors.map((e: { institution: string }) => e.institution).join(", ")}. Check Connected Institutions.`);
+      }
       await Promise.all([loadAccounts(), loadHistory(range)]);
     } catch {
       setError("Sync failed. Please try again.");
