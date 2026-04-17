@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { CountryCode } from "plaid";
 import { plaidClient } from "@/lib/plaid";
 import { getHouseholdId } from "@/lib/household";
+import { decrypt } from "@/lib/encrypt";
 import sql from "@/lib/db";
 
 export async function POST(req: NextRequest) {
@@ -24,7 +25,7 @@ export async function POST(req: NextRequest) {
   const response = await plaidClient.linkTokenCreate({
     user: { client_user_id: userId },
     client_name: "PayClarity",
-    access_token: rows[0].plaid_access_token,
+    access_token: decrypt(rows[0].plaid_access_token),
     country_codes: [CountryCode.Us],
     language: "en",
   });

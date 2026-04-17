@@ -2,6 +2,7 @@ import { auth } from "@clerk/nextjs/server";
 import { NextResponse } from "next/server";
 import { plaidClient } from "@/lib/plaid";
 import { getHouseholdId } from "@/lib/household";
+import { decrypt } from "@/lib/encrypt";
 import sql from "@/lib/db";
 import { PlaidError } from "plaid";
 
@@ -21,7 +22,7 @@ export async function POST() {
 
   for (const item of items) {
     try {
-      const balanceResponse = await plaidClient.accountsBalanceGet({ access_token: item.plaid_access_token });
+      const balanceResponse = await plaidClient.accountsBalanceGet({ access_token: decrypt(item.plaid_access_token) });
 
       // Clear any previous error now that sync succeeded
       await sql`UPDATE plaid_items SET error_code = NULL WHERE plaid_item_id = ${item.plaid_item_id}`;

@@ -2,6 +2,7 @@ import { auth } from "@clerk/nextjs/server";
 import { NextRequest, NextResponse } from "next/server";
 import { plaidClient } from "@/lib/plaid";
 import { getHouseholdId } from "@/lib/household";
+import { encrypt } from "@/lib/encrypt";
 import sql from "@/lib/db";
 
 export async function POST(req: NextRequest) {
@@ -27,10 +28,11 @@ export async function POST(req: NextRequest) {
     WHERE household_id = ${householdId} AND institution_id = ${institution_id} AND plaid_item_id != ${item_id}
   `;
 
-  // Insert the new item
+  // Insert the new item — access token is encrypted at rest
+  const encryptedToken = encrypt(access_token);
   await sql`
     INSERT INTO plaid_items (household_id, plaid_item_id, plaid_access_token, institution_id, institution_name)
-    VALUES (${householdId}, ${item_id}, ${access_token}, ${institution_id}, ${institution_name})
+    VALUES (${householdId}, ${item_id}, ${encryptedToken}, ${institution_id}, ${institution_name})
     ON CONFLICT (plaid_item_id) DO UPDATE
       SET plaid_access_token = EXCLUDED.plaid_access_token,
           institution_name   = EXCLUDED.institution_name,
