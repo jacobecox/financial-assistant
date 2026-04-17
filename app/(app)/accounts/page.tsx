@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { usePlaidLink } from "react-plaid-link";
+import { relativeTime } from "@/lib/relative-time";
 import {
   ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip, CartesianGrid,
 } from "recharts";
@@ -279,7 +280,7 @@ export default function AccountsPage() {
   );
 
   const lastSynced = accounts[0]?.updated_at
-    ? new Date(accounts[0].updated_at).toLocaleString()
+    ? relativeTime(accounts[0].updated_at)
     : null;
 
   const chartMin = history.length

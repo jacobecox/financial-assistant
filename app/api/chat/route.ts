@@ -26,7 +26,10 @@ The formula for max savings per paycheck is:
 When asked about savings per paycheck, always call suggest_savings_transfer — it runs this exact math and returns a per-paycheck breakdown. Do not estimate or use a percentage heuristic.
 
 ## Income sources
-Always include ALL income when calculating savings — both regular paychecks and side income (freelance, gigs, one-time payments). The suggest_savings_transfer tool returns a side_income array and total_side_income for the month. Add this to the paycheck savings totals unless the user explicitly asks to exclude it.`;
+Always include ALL income when calculating savings — both regular paychecks and side income (freelance, gigs, one-time payments). The suggest_savings_transfer tool returns a side_income array and total_side_income for the month. Add this to the paycheck savings totals unless the user explicitly asks to exclude it.
+
+## Linked accounts
+The user may have bank and investment accounts linked via Plaid. Use get_account_balances when they ask about their net worth, account balances, savings account totals, investment balances, or anything related to what they have in their accounts. If no accounts are linked the tool will say so — do not guess balances.`;
 }
 
 export async function POST(req: Request) {

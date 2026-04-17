@@ -47,12 +47,12 @@ function monthlyFromSchedule(s: PaySchedule): number {
 // ─── Stat card ────────────────────────────────────────────────────────────────
 
 function StatCard({
-  label, value, sub, accent, dim,
+  label, value, sub, accent, dim, href,
 }: {
-  label: string; value: string; sub?: string; accent: string; dim?: boolean;
+  label: string; value: string; sub?: string; accent: string; dim?: boolean; href?: string;
 }) {
-  return (
-    <div className={`${card} border-l-2 ${accent} space-y-1`}>
+  const inner = (
+    <div className={`${card} border-l-2 ${accent} space-y-1 ${href ? "hover:ring-white/10 transition-all" : ""}`}>
       <p className="text-xs font-semibold uppercase tracking-widest text-slate-400">{label}</p>
       <p className={`text-3xl font-bold tabular-nums ${dim ? "text-slate-400" : "text-slate-50"}`}>
         {value}
@@ -60,6 +60,8 @@ function StatCard({
       {sub && <p className="text-xs text-slate-500">{sub}</p>}
     </div>
   );
+  if (href) return <Link href={href} className="block">{inner}</Link>;
+  return inner;
 }
 
 // ─── Breakdown bar ────────────────────────────────────────────────────────────
@@ -253,6 +255,7 @@ export default function OverviewPage() {
   const [schedules, setSchedules]       = useState<PaySchedule[]>([]);
   const [discretionary, setDiscretionary] = useState<DiscretionaryItem[]>([]);
   const [planned, setPlanned]           = useState<PlannedExpense[]>([]);
+  const [netWorth, setNetWorth]         = useState<number | null>(null);
   const [loading, setLoading]           = useState(true);
   const [fetchError, setFetchError]     = useState(false);
 
@@ -264,11 +267,22 @@ export default function OverviewPage() {
       fetch("/api/pay-schedule").then((r) => r.json()),
       fetch("/api/discretionary").then((r) => r.json()),
       fetch(`/api/planned-expenses?year=${year}&month=${month}`).then((r) => r.json()),
-    ]).then(([b, s, d, p]) => {
+      fetch("/api/plaid/accounts").then((r) => r.json()),
+    ]).then(([b, s, d, p, plaid]) => {
       setBills(Array.isArray(b) ? b : []);
       setSchedules(Array.isArray(s) ? s : []);
       setDiscretionary(Array.isArray(d) ? d : []);
       setPlanned(Array.isArray(p) ? p : []);
+      const accounts: { type: string; current_balance: string | number | null }[] = plaid.accounts ?? [];
+      if (accounts.length > 0) {
+        const liabilityTypes = ["credit", "loan"];
+        const assets = accounts.filter((a) => !liabilityTypes.includes(a.type));
+        const liabilities = accounts.filter((a) => liabilityTypes.includes(a.type));
+        setNetWorth(
+          assets.reduce((s, a) => s + Number(a.current_balance ?? 0), 0) -
+          liabilities.reduce((s, a) => s + Number(a.current_balance ?? 0), 0)
+        );
+      }
       setLoading(false);
     }).catch(() => {
       setFetchError(true);
@@ -336,6 +350,18 @@ export default function OverviewPage() {
     <div className="space-y-4">
       <h1 className="text-2xl font-bold tracking-tight">Overview</h1>
 
+      {netWorth !== null && (
+        <Link href="/accounts" className="block group">
+          <div className="rounded-xl bg-linear-to-br from-emerald-950/60 to-slate-800 ring-1 ring-emerald-500/20 hover:ring-emerald-500/40 transition-all px-6 py-6">
+            <p className="text-xs font-semibold uppercase tracking-widest text-emerald-400/70 mb-1">Net Worth</p>
+            <div className="flex items-end justify-between gap-4">
+              <p className="text-5xl font-bold tabular-nums text-slate-50 leading-none">{fmt$(netWorth)}</p>
+              <p className="text-sm text-slate-500 group-hover:text-emerald-400 transition-colors pb-0.5 shrink-0">View accounts →</p>
+            </div>
+          </div>
+        </Link>
+      )}
+
       <div className="grid grid-cols-1 gap-3">
         <StatCard
           label="Monthly Income"
@@ -343,6 +369,7 @@ export default function OverviewPage() {
           sub={hasSchedules ? undefined : "No pay schedule set up"}
           accent="border-emerald-500/50"
           dim={!hasSchedules}
+          href="/income"
         />
         <StatCard
           label="Monthly Bills"
@@ -353,6 +380,7 @@ export default function OverviewPage() {
               : "No bills added yet"
           }
           accent="border-rose-500/50"
+          href="/expenses"
         />
         {totalPlanned > 0 && (
           <StatCard
@@ -360,6 +388,7 @@ export default function OverviewPage() {
             value={fmt$(totalPlanned)}
             sub={`${planned.length} one-time expense${planned.length !== 1 ? "s" : ""}`}
             accent="border-orange-400/50"
+            href="/expenses"
           />
         )}
         <StatCard
@@ -367,11 +396,12 @@ export default function OverviewPage() {
           value={expectedMonthly > 0 ? fmt$(estSavings) : "—"}
           sub={
             expectedMonthly > 0
-              ? "After bills, planned & buffer"
+              ? "After bills, planned expenses & buffer"
               : "Add a pay schedule to see this"
           }
           accent="border-teal-500/50"
           dim={!hasSchedules}
+          href="/ask"
         />
       </div>
 

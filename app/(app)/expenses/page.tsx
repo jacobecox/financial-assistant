@@ -417,7 +417,11 @@ function PlannedSection() {
       )}
 
       {all.length === 0 && !showForm ? (
-        <p className="text-sm text-slate-500">No planned expenses for this month.</p>
+        <div className="py-4 flex flex-col items-center text-center gap-2">
+          <p className="text-sm text-slate-400 font-medium">No planned expenses this month</p>
+          <p className="text-xs text-slate-600 max-w-xs">Upcoming vacation, car repair, or big purchase? Add it here so the AI factors it into your savings calculation.</p>
+          <button onClick={() => setShowForm(true)} className="mt-1 text-xs font-medium text-emerald-400 hover:text-emerald-300 transition-colors">+ Add a planned expense</button>
+        </div>
       ) : (
         <ul className="space-y-1.5">
           {all.map((p) => (
@@ -539,7 +543,11 @@ function DiscretionarySection() {
       )}
 
       {items.length === 0 && !showForm ? (
-        <p className="text-slate-500 text-sm">No discretionary items yet.</p>
+        <div className="py-4 flex flex-col items-center text-center gap-2">
+          <p className="text-sm text-slate-400 font-medium">No buffer items yet</p>
+          <p className="text-xs text-slate-600 max-w-xs">Reserve a spending buffer each paycheck — like groceries or gas — so it's not counted toward savings.</p>
+          <button onClick={() => setShowForm(true)} className="mt-1 text-xs font-medium text-emerald-400 hover:text-emerald-300 transition-colors">+ Add a buffer item</button>
+        </div>
       ) : (
         <div className={card + " space-y-2"}>
           {items.map((item) => (
@@ -892,9 +900,13 @@ export default function ExpensesPage() {
 
       {loading ? (
         <p className="text-slate-500 text-sm">Loading…</p>
-      ) : bills.length === 0 ? (
-        <p className="text-slate-500 text-sm">No bills added yet.</p>
-      ) : (
+      ) : bills.length === 0 && !showForm ? (
+        <div className="rounded-xl bg-slate-800/60 ring-1 ring-white/5 p-8 flex flex-col items-center text-center gap-3">
+          <p className="text-slate-200 font-semibold">No bills yet</p>
+          <p className="text-sm text-slate-500 max-w-xs leading-relaxed">Add your recurring bills and subscriptions so the AI knows what comes out of each paycheck when calculating your savings.</p>
+          <button onClick={() => setShowForm(true)} className={btn.primary}>+ Add your first bill</button>
+        </div>
+      ) : bills.length > 0 ? (
         <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
           <SortableContext items={cats.map((c) => `cat:${c}`)} strategy={verticalListSortingStrategy}>
             <div className="space-y-4">
@@ -921,7 +933,7 @@ export default function ExpensesPage() {
             </div>
           </SortableContext>
         </DndContext>
-      )}
+      ) : null}
 
       <hr className="border-slate-700/50" />
       <PlannedSection />

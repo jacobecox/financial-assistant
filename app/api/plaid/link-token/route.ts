@@ -14,7 +14,7 @@ export async function POST() {
   const response = await plaidClient.linkTokenCreate({
     user: { client_user_id: userId },
     client_name: "PayClarity",
-    products: [Products.Transactions, Products.Investments],
+    products: [Products.Investments],
     country_codes: [CountryCode.Us],
     language: "en",
     ...(process.env.PLAID_ENV === "production" && process.env.PLAID_REDIRECT_URI

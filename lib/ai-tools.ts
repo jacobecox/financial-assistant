@@ -88,6 +88,16 @@ export const financialTools: Anthropic.Tool[] = [
       required: [],
     },
   },
+  {
+    name: "get_account_balances",
+    description:
+      "Returns all linked bank and investment account balances grouped by type (checking, savings, investments, liabilities). Also returns total net worth (assets minus liabilities). Use this when the user asks about their accounts, balances, net worth, savings account balance, or investment totals.",
+    input_schema: {
+      type: "object" as const,
+      properties: {},
+      required: [],
+    },
+  },
 ];
 
 // Tool executor — receives tool name + input, returns result string
@@ -324,6 +334,56 @@ export async function executeTool(
         planned_expenses_this_month: plannedRows.map((r) => ({ name: r.name, amount: Number(r.amount), date: r.planned_date })),
         total_planned: totalPlanned,
         note: "max_savings = paycheck_amount - bills_due_in_window - buffer_reserved. Always add total_side_income to total paycheck savings for the full monthly savings capacity. Planned expenses shown for context — factor them into the paycheck(s) closest to their due date.",
+      });
+    }
+
+    case "get_account_balances": {
+      const accounts = await sql<{
+        name: string; type: string; subtype: string | null;
+        mask: string | null; current_balance: number | null;
+        institution_name: string;
+      }[]>`
+        SELECT a.name, a.type, a.subtype, a.mask, a.current_balance, i.institution_name
+        FROM plaid_accounts a
+        JOIN plaid_items i ON i.plaid_item_id = a.plaid_item_id
+        WHERE a.household_id = ${householdId}
+        ORDER BY i.institution_name, a.name
+      `;
+
+      if (accounts.length === 0) {
+        return JSON.stringify({ error: "No linked accounts found. The user has not connected any bank accounts yet." });
+      }
+
+      const liabilityTypes = ["credit", "loan"];
+      const checking    = accounts.filter((a) => a.subtype === "checking");
+      const savings     = accounts.filter((a) => ["savings", "money market", "cd"].includes(a.subtype ?? ""));
+      const investments = accounts.filter((a) => a.type === "investment" || a.type === "brokerage");
+      const liabilities = accounts.filter((a) => liabilityTypes.includes(a.type));
+      const other       = accounts.filter((a) =>
+        !checking.includes(a) && !savings.includes(a) && !investments.includes(a) && !liabilities.includes(a)
+      );
+
+      const sum = (arr: typeof accounts) => arr.reduce((s, a) => s + Number(a.current_balance ?? 0), 0);
+      const totalAssets = sum(checking) + sum(savings) + sum(investments) + sum(other);
+      const totalDebt   = sum(liabilities);
+      const netWorth    = totalAssets - totalDebt;
+
+      const fmt = (accts: typeof accounts) => accts.map((a) => ({
+        name: a.name + (a.mask ? ` (···${a.mask})` : ""),
+        institution: a.institution_name,
+        balance: Number(a.current_balance ?? 0),
+      }));
+
+      return JSON.stringify({
+        net_worth: netWorth,
+        total_assets: totalAssets,
+        total_liabilities: totalDebt,
+        checking:    { total: sum(checking),    accounts: fmt(checking) },
+        savings:     { total: sum(savings),     accounts: fmt(savings) },
+        investments: { total: sum(investments), accounts: fmt(investments) },
+        liabilities: { total: sum(liabilities), accounts: fmt(liabilities) },
+        other:       { total: sum(other),       accounts: fmt(other) },
+        note: "Balances reflect the last sync time. Suggest the user sync if they want current data.",
       });
     }
 
