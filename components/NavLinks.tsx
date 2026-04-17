@@ -5,11 +5,12 @@ import { usePathname } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 
 const links = [
-  { href: "/overview",             label: "Overview",  exact: true },
-  { href: "/income",               label: "Income" },
-  { href: "/expenses",             label: "Expenses" },
-  { href: "/calendar",             label: "Calendar" },
-  { href: "/ask",                  label: "Ask AI" },
+  { href: "/overview",  label: "Overview", exact: true },
+  { href: "/accounts",  label: "Accounts" },
+  { href: "/income",    label: "Income" },
+  { href: "/expenses",  label: "Expenses" },
+  { href: "/calendar",  label: "Calendar" },
+  { href: "/ask",       label: "Ask AI" },
 ];
 
 export function NavLinks() {

@@ -1,6 +1,7 @@
 "use client";
 
 import { createContext, useContext, useEffect, useState } from "react";
+import { usePathname } from "next/navigation";
 
 const MONTH_NAMES = [
   "January","February","March","April","May","June",
@@ -87,8 +88,12 @@ export function useMonth() {
   return ctx;
 }
 
+const HIDE_MONTH_BAR = ["/accounts", "/settings"];
+
 export function MonthBar() {
   const { monthLabel, prevMonth, nextMonth, goToday, isCurrentMonth } = useMonth();
+  const pathname = usePathname();
+  if (HIDE_MONTH_BAR.some((p) => pathname.startsWith(p))) return null;
 
   return (
     <div className="w-full flex items-center justify-center gap-1 py-1.5 border-b border-slate-800 bg-slate-900">
