@@ -22,7 +22,8 @@ export async function GET() {
       a.available_balance,
       a.updated_at,
       i.institution_name,
-      i.institution_id
+      i.institution_id,
+      i.plaid_item_id
     FROM plaid_accounts a
     JOIN plaid_items i ON i.plaid_item_id = a.plaid_item_id
     WHERE a.household_id = ${householdId}

@@ -5,6 +5,7 @@ import { usePlaidLink } from "react-plaid-link";
 
 type PlaidAccount = {
   plaid_account_id: string;
+  plaid_item_id: string;
   name: string;
   official_name: string | null;
   type: string;
@@ -98,6 +99,8 @@ export default function LinkedAccountsPage() {
   const [accounts, setAccounts] = useState<PlaidAccount[]>([]);
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
+  const [unlinking, setUnlinking] = useState<string | null>(null);
+  const [confirmUnlink, setConfirmUnlink] = useState<{ itemId: string; name: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const loadAccounts = useCallback(async () => {
@@ -126,13 +129,32 @@ export default function LinkedAccountsPage() {
     }
   };
 
-  // Group accounts by institution
-  const byInstitution = accounts.reduce<Record<string, PlaidAccount[]>>((acc, a) => {
-    const key = a.institution_name;
-    if (!acc[key]) acc[key] = [];
-    acc[key].push(a);
-    return acc;
-  }, {});
+  const handleUnlink = async (plaidItemId: string) => {
+    setUnlinking(plaidItemId);
+    setConfirmUnlink(null);
+    try {
+      await fetch("/api/plaid/accounts", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ plaid_item_id: plaidItemId }),
+      });
+      await loadAccounts();
+    } catch {
+      setError("Failed to unlink. Please try again.");
+    } finally {
+      setUnlinking(null);
+    }
+  };
+
+  // Group accounts by institution (keyed by plaid_item_id for unlink)
+  const byInstitution = accounts.reduce<Record<string, { name: string; itemId: string; accounts: PlaidAccount[] }>>(
+    (acc, a) => {
+      if (!acc[a.plaid_item_id]) acc[a.plaid_item_id] = { name: a.institution_name, itemId: a.plaid_item_id, accounts: [] };
+      acc[a.plaid_item_id].accounts.push(a);
+      return acc;
+    },
+    {}
+  );
 
   return (
     <div className="max-w-2xl mx-auto py-8 px-4">
@@ -162,6 +184,28 @@ export default function LinkedAccountsPage() {
         </div>
       )}
 
+      {confirmUnlink && (
+        <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-lg">
+          <p className="text-sm font-medium text-red-800">Unlink {confirmUnlink.name}?</p>
+          <p className="text-xs text-red-600 mt-1">All accounts from this institution will be removed.</p>
+          <div className="flex gap-2 mt-3">
+            <button
+              onClick={() => handleUnlink(confirmUnlink.itemId)}
+              disabled={!!unlinking}
+              className="px-3 py-1.5 rounded-md bg-red-600 text-white text-sm font-medium hover:bg-red-700 transition-colors disabled:opacity-60"
+            >
+              {unlinking ? "Removing…" : "Yes, unlink"}
+            </button>
+            <button
+              onClick={() => setConfirmUnlink(null)}
+              className="px-3 py-1.5 rounded-md border border-gray-300 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+
       {loading ? (
         <p className="text-gray-400 text-sm">Loading…</p>
       ) : accounts.length === 0 ? (
@@ -171,9 +215,18 @@ export default function LinkedAccountsPage() {
         </div>
       ) : (
         <div className="space-y-6">
-          {Object.entries(byInstitution).map(([institution, accts]) => (
-            <div key={institution}>
-              <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">{institution}</h2>
+          {Object.values(byInstitution).map(({ name, itemId, accounts: accts }) => (
+            <div key={itemId}>
+              <div className="flex items-center justify-between mb-2">
+                <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-wide">{name}</h2>
+                <button
+                  onClick={() => setConfirmUnlink({ itemId, name })}
+                  disabled={!!unlinking}
+                  className="text-xs text-red-400 hover:text-red-600 transition-colors disabled:opacity-40"
+                >
+                  Unlink
+                </button>
+              </div>
               <div className="space-y-2">
                 {accts.map((a) => <AccountCard key={a.plaid_account_id} account={a} />)}
               </div>
