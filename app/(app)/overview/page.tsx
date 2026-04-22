@@ -267,7 +267,7 @@ export default function OverviewPage() {
       fetch("/api/pay-schedule").then((r) => r.json()),
       fetch("/api/discretionary").then((r) => r.json()),
       fetch(`/api/planned-expenses?year=${year}&month=${month}`).then((r) => r.json()),
-      fetch("/api/plaid/accounts").then((r) => r.json()),
+      fetch("/api/plaid/accounts").then((r) => r.json()).catch(() => ({ accounts: [] })),
     ]).then(([b, s, d, p, plaid]) => {
       setBills(Array.isArray(b) ? b : []);
       setSchedules(Array.isArray(s) ? s : []);

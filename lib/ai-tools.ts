@@ -363,12 +363,13 @@ export async function executeTool(
         !checking.includes(a) && !savings.includes(a) && !investments.includes(a) && !liabilities.includes(a)
       );
 
-      const sum = (arr: typeof accounts) => arr.reduce((s, a) => s + Number(a.current_balance ?? 0), 0);
+      type Account = (typeof accounts)[number];
+      const sum = (arr: Account[]) => arr.reduce((s, a) => s + Number(a.current_balance ?? 0), 0);
       const totalAssets = sum(checking) + sum(savings) + sum(investments) + sum(other);
       const totalDebt   = sum(liabilities);
       const netWorth    = totalAssets - totalDebt;
 
-      const fmt = (accts: typeof accounts) => accts.map((a) => ({
+      const fmt = (accts: Account[]) => accts.map((a) => ({
         name: a.name + (a.mask ? ` (···${a.mask})` : ""),
         institution: a.institution_name,
         balance: Number(a.current_balance ?? 0),
