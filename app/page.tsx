@@ -93,7 +93,7 @@ const pillars = [
 ];
 
 const features = [
-  { Icon: IconBank,     title: "5,000+ supported institutions",  desc: "Chase, Ally, Fidelity, Empower, and more" },
+  { Icon: IconBank,     title: "5,000+ supported institutions",  desc: "Chase, Ally, Empower, and more" },
   { Icon: IconPaycheck, title: "Any pay schedule",               desc: "Twice monthly, biweekly, monthly, or one-time" },
   { Icon: IconCalendar, title: "Bill calendar",                  desc: "See every upcoming bill laid out by month" },
   { Icon: IconUsers,    title: "Shared household finances",      desc: "Invite a partner to share the same view" },

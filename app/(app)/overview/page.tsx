@@ -354,9 +354,9 @@ export default function OverviewPage() {
         <Link href="/accounts" className="block group">
           <div className="rounded-xl bg-linear-to-br from-emerald-950/60 to-slate-800 ring-1 ring-emerald-500/20 hover:ring-emerald-500/40 transition-all px-6 py-6">
             <p className="text-xs font-semibold uppercase tracking-widest text-emerald-400/70 mb-1">Net Worth</p>
-            <div className="flex items-end justify-between gap-4">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
               <p className="text-5xl font-bold tabular-nums text-slate-50 leading-none">{fmt$(netWorth)}</p>
-              <p className="text-sm text-slate-500 group-hover:text-emerald-400 transition-colors pb-0.5 shrink-0">View accounts →</p>
+              <p className="text-sm text-slate-500 group-hover:text-emerald-400 transition-colors sm:pb-0.5">View accounts →</p>
             </div>
           </div>
         </Link>

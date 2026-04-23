@@ -878,7 +878,10 @@ export default function ExpensesPage() {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-bold tracking-tight">Expenses</h1>
+      <div>
+        <h1 className="text-2xl font-bold tracking-tight">Expenses</h1>
+        <p className="text-sm text-slate-500 mt-0.5">Bills, planned expenses & buffer</p>
+      </div>
 
       {error && (
         <p className="text-xs text-rose-400 flex items-center gap-2">
